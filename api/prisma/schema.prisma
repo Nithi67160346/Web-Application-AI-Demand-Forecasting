@@ -1,0 +1,159 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  USER
+  ADMIN
+}
+
+enum RoomType {
+  SMALL
+  MEDIUM
+  LARGE
+  VIP
+}
+
+enum RoomStatus {
+  AVAILABLE
+  MAINTENANCE
+}
+
+enum BookingStatus {
+  PENDING
+  CONFIRMED
+  CANCELLED
+  COMPLETED
+}
+
+enum PaymentStatus {
+  UNPAID
+  PAID
+  REFUNDED
+}
+
+model User {
+  id           String    @id @default(cuid())
+  username     String    @unique
+  email        String    @unique
+  passwordHash String
+  firstName    String
+  lastName     String
+  phone        String?
+  role         UserRole  @default(USER)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  sessions     Session[]
+  bookings     Booking[]
+  reviews      Review[]
+}
+
+model Session {
+  id        String   @id
+  userId    String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+model Branch {
+  id        String    @id
+  name      String
+  slug      String    @unique
+  area      String
+  address   String?
+  isActive  Boolean   @default(true)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  rooms     Room[]
+  bookings  Booking[]
+}
+
+model Room {
+  id           String      @id
+  code         String      @unique
+  name         String
+  type         RoomType
+  capacity     Int
+  pricePerHour Int
+  gridColumn   Int
+  gridRow      Int
+  status       RoomStatus  @default(AVAILABLE)
+  branchId     String
+  branch       Branch      @relation(fields: [branchId], references: [id], onDelete: Restrict)
+  bookings     Booking[]
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+
+  @@index([branchId, status])
+}
+
+model AddOn {
+  id          String        @id
+  name        String
+  price       Int
+  icon        String?
+  isActive    Boolean       @default(true)
+  bookingRows BookingAddOn[]
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+}
+
+model Booking {
+  id            String         @id @default(cuid())
+  code          String         @unique
+  userId        String
+  branchId      String
+  roomId        String
+  bookingDate   DateTime       @db.Date
+  startTime     String
+  durationHours Int            @default(2)
+  status        BookingStatus  @default(PENDING)
+  paymentStatus PaymentStatus  @default(UNPAID)
+  totalAmount   Int
+  checkedInAt   DateTime?
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  branch        Branch         @relation(fields: [branchId], references: [id], onDelete: Restrict)
+  room          Room           @relation(fields: [roomId], references: [id], onDelete: Restrict)
+  addOns        BookingAddOn[]
+  review        Review?
+
+  @@index([userId, bookingDate])
+  @@index([roomId, bookingDate, status])
+}
+
+model BookingAddOn {
+  bookingId String
+  addOnId   String
+  quantity  Int
+  unitPrice Int
+  booking   Booking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  addOn     AddOn   @relation(fields: [addOnId], references: [id], onDelete: Restrict)
+
+  @@id([bookingId, addOnId])
+}
+
+model Review {
+  id        String   @id @default(cuid())
+  bookingId String   @unique
+  userId    String
+  rating    Int
+  comment   String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  booking   Booking  @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+}
+
