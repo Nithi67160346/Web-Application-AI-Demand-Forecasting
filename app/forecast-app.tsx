@@ -632,6 +632,84 @@ function ToggleRow({ title, detail, checked, onChange }: { title: string; detail
 type LoginPayload = { username_or_email: string; password: string };
 type RegisterPayload = { username: string; email: string; password: string; full_name: string };
 
+function AuthScene({
+  variant,
+  children,
+}: {
+  variant: "login" | "register";
+  children: React.ReactNode;
+}) {
+  const isRegister = variant === "register";
+
+  return (
+    <main className={`login-screen login-screen-${variant}`}>
+      <div className="login-backdrop" aria-hidden="true">
+        <span className="login-glow login-glow-one" />
+        <span className="login-glow login-glow-two" />
+        <span className="login-orbit login-orbit-one" />
+        <span className="login-orbit login-orbit-two" />
+      </div>
+
+      <header className="login-topbar">
+        <AppLogo light />
+        <span className="login-topbar-label"><Icon name="spark" /> AI Demand Intelligence</span>
+      </header>
+
+      <div className="login-layout">
+        <section className="login-story">
+          <span className="ai-badge"><Icon name="spark" /> HUMAN + AI PLANNING</span>
+          <h1>
+            {isRegister ? <>เริ่มวางแผน <em>Demand</em><br />ด้วยข้อมูลของทีมคุณ</> : <>เห็น <em>Demand</em> ชัดขึ้น<br />ก่อนทุกการตัดสินใจ</>}
+          </h1>
+          <p>
+            {isRegister
+              ? "สร้างพื้นที่ทำงานที่รวมข้อมูล การพยากรณ์ และการตัดสินใจของทีมไว้ในที่เดียว"
+              : "เปลี่ยนข้อมูลยอดขายให้เป็น Forecast ที่เข้าใจง่าย พร้อมสัญญาณเตือนก่อนความต้องการเปลี่ยนทิศ"}
+          </p>
+
+          <div className="login-benefits" aria-label="จุดเด่นของระบบ">
+            <span><i /> Forecast อธิบายได้</span>
+            <span><i /> แจ้งเตือนล่วงหน้า</span>
+            <span><i /> Human review</span>
+          </div>
+
+          <div className="login-signal-card" aria-hidden="true">
+            <div className="login-signal-heading">
+              <span><i /> DEMAND OUTLOOK</span>
+              <strong>LIVE</strong>
+            </div>
+            <div className="login-signal-content">
+              <div className="login-signal-value">
+                <small>Forecast · 30 วัน</small>
+                <strong>12,480</strong>
+                <span><b>↑ 12.8%</b> จากช่วงก่อนหน้า</span>
+              </div>
+              <div className="login-signal-chart">
+                <i style={{ height: "30%" }} />
+                <i style={{ height: "43%" }} />
+                <i style={{ height: "38%" }} />
+                <i style={{ height: "57%" }} />
+                <i style={{ height: "52%" }} />
+                <i style={{ height: "72%" }} />
+                <i style={{ height: "67%" }} />
+                <i style={{ height: "88%" }} />
+                <i style={{ height: "80%" }} />
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section className="login-card-wrap">
+          <div>
+            {children}
+            <p className="login-footnote"><Icon name="shield" /> ข้อมูลของคุณได้รับการปกป้องอย่างปลอดภัย</p>
+          </div>
+        </section>
+      </div>
+    </main>
+  );
+}
+
 function LoginView({
   onLogin,
   onRegister,
@@ -646,7 +724,38 @@ function LoginView({
   const [usernameOrEmail, setUsernameOrEmail] = useState("");
   const [password, setPassword] = useState("");
 
-  return <main className="login-screen"><div className="login-decoration"><div className="login-orbit orbit-large" /><div className="login-orbit orbit-small" /><span className="login-deco-dot dot-one" /><span className="login-deco-dot dot-two" /><div className="login-quote"><span className="ai-badge"><Icon name="spark" /> HUMAN + AI</span><h2>เห็น Demand<br />ก่อนตลาด<br /><em>ขยับตัว</em></h2><p>ใช้ข้อมูลที่คุณมี เพื่อวางแผนสิ่งที่กำลังจะเกิดขึ้น</p></div><div className="login-mini-chart"><span>DEMAND SIGNAL</span><div><i style={{ height: "36%" }} /><i style={{ height: "52%" }} /><i style={{ height: "44%" }} /><i style={{ height: "72%" }} /><i style={{ height: "62%" }} /><i style={{ height: "88%" }} /><i style={{ height: "78%" }} /></div></div></div><div className="login-card-wrap"><div className="login-brand"><AppLogo /><span>for modern supply chains</span></div><div className="login-card"><span className="panel-kicker">WELCOME BACK</span><h1>เข้าสู่ระบบ</h1><p>เริ่มต้นวันของคุณด้วยภาพรวม Demand ที่ชัดขึ้น</p><form onSubmit={(event) => { event.preventDefault(); void onLogin({ username_or_email: usernameOrEmail, password }); }}><label className="form-field"><span>Username หรือ Email</span><input value={usernameOrEmail} onChange={(event) => setUsernameOrEmail(event.target.value)} autoComplete="username" required /></label><label className="form-field"><span>Password</span><input value={password} onChange={(event) => setPassword(event.target.value)} type="password" autoComplete="current-password" required /></label><div className="login-options"><label><input type="checkbox" defaultChecked /> <span>จดจำฉัน</span></label><button type="button" onClick={onRegister}>สมัครสมาชิก</button></div>{error && <p className="auth-error" role="alert">{error}</p>}<Button type="submit" disabled={isLoading} icon="arrow">{isLoading ? "กำลังเข้าสู่ระบบ..." : "เข้าสู่ Demandly"}</Button></form><div className="login-divider"><span>หรือ</span></div><button className="sso-button" type="button" onClick={onRegister}><span className="sso-mark">+</span> สร้างบัญชีใหม่สำหรับทีม</button></div><p className="login-footnote"><Icon name="shield" /> ข้อมูลของคุณได้รับการปกป้องด้วย enterprise-grade security</p></div></main>;
+  return (
+    <AuthScene variant="login">
+      <div className="login-card">
+        <div className="login-card-heading">
+          <span className="login-card-icon"><Icon name="lock" /></span>
+          <div>
+            <span className="panel-kicker">WELCOME BACK</span>
+            <h1>เข้าสู่ระบบ</h1>
+          </div>
+        </div>
+        <p>ดู Forecast ล่าสุดและรายการที่ทีมต้องตัดสินใจต่อได้ทันที</p>
+        <form onSubmit={(event) => { event.preventDefault(); void onLogin({ username_or_email: usernameOrEmail, password }); }}>
+          <label className="form-field">
+            <span>Username หรือ Email</span>
+            <input value={usernameOrEmail} onChange={(event) => setUsernameOrEmail(event.target.value)} autoComplete="username" placeholder="กรอก username หรือ email" required />
+          </label>
+          <label className="form-field">
+            <span>Password</span>
+            <input value={password} onChange={(event) => setPassword(event.target.value)} type="password" autoComplete="current-password" placeholder="กรอกรหัสผ่าน" required />
+          </label>
+          <div className="login-options">
+            <label><input type="checkbox" defaultChecked /> <span>จดจำฉัน</span></label>
+            <button type="button" onClick={onRegister}>สมัครสมาชิก</button>
+          </div>
+          {error && <p className="auth-error" role="alert">{error}</p>}
+          <Button type="submit" disabled={isLoading} icon="arrow">{isLoading ? "กำลังเข้าสู่ระบบ..." : "เข้าสู่ Demandly"}</Button>
+        </form>
+        <div className="login-divider"><span>ยังไม่มีบัญชี?</span></div>
+        <button className="sso-button" type="button" onClick={onRegister}><span className="sso-mark">+</span> สร้างบัญชีใหม่สำหรับทีม</button>
+      </div>
+    </AuthScene>
+  );
 }
 
 function RegisterView({
@@ -701,7 +810,46 @@ function RegisterView({
   const usernameStatusClass = usernameStatus === "available" ? " is-available" : usernameStatus === "taken" ? " is-taken" : "";
   const usernameStatusText = usernameStatus === "checking" ? "กำลังตรวจสอบ..." : usernameStatus === "available" ? "Username นี้ใช้ได้" : usernameStatus === "taken" ? "Username นี้ถูกใช้งานแล้ว" : "ใช้ 3–32 ตัวอักษร a-z, 0-9, . _ -";
 
-  return <main className="login-screen"><div className="login-decoration"><div className="login-orbit orbit-large" /><div className="login-orbit orbit-small" /><span className="login-deco-dot dot-one" /><span className="login-deco-dot dot-two" /><div className="login-quote"><span className="ai-badge"><Icon name="spark" /> HUMAN + AI</span><h2>วางแผนได้<br />ก่อน Demand<br /><em>เปลี่ยนทิศ</em></h2><p>สร้าง workspace ของคุณ แล้วเริ่มต้นจากข้อมูลที่ทีมมีอยู่</p></div><div className="login-mini-chart"><span>DEMAND SIGNAL</span><div><i style={{ height: "36%" }} /><i style={{ height: "52%" }} /><i style={{ height: "44%" }} /><i style={{ height: "72%" }} /><i style={{ height: "62%" }} /><i style={{ height: "88%" }} /><i style={{ height: "78%" }} /></div></div></div><div className="login-card-wrap"><div className="login-brand"><AppLogo /><span>for modern supply chains</span></div><div className="login-card"><span className="panel-kicker">GET STARTED</span><h1>สร้างบัญชี</h1><p>เริ่มใช้งาน Demandly สำหรับทีม Supply Chain ของคุณ</p><form onSubmit={submitRegister}><label className="form-field"><span>Username</span><input value={username} onChange={(event) => { setUsername(event.target.value); setUsernameStatus("idle"); }} onBlur={(event) => void inspectUsername(event.target.value)} autoComplete="username" required /><small className={"username-check" + usernameStatusClass}>{usernameStatusText}</small></label><label className="form-field"><span>ชื่อที่ใช้แสดง</span><input value={fullName} onChange={(event) => setFullName(event.target.value)} autoComplete="name" placeholder="เช่น กิตติ Supply Planner" /></label><label className="form-field"><span>Email</span><input value={email} onChange={(event) => setEmail(event.target.value)} type="email" autoComplete="email" required /></label><label className="form-field"><span>Password</span><input value={password} onChange={(event) => setPassword(event.target.value)} type="password" autoComplete="new-password" minLength={8} required /><small className="password-hint">อย่างน้อย 8 ตัวอักษร</small></label><label className="form-field"><span>ยืนยัน Password</span><input value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} type="password" autoComplete="new-password" minLength={8} required /></label>{visibleError && <p className="auth-error" role="alert">{visibleError}</p>}<Button type="submit" disabled={isLoading} icon="arrow">{isLoading ? "กำลังสร้างบัญชี..." : "สร้างบัญชีและเริ่มใช้งาน"}</Button></form><div className="auth-switch">มีบัญชีอยู่แล้ว? <button type="button" onClick={onLogin}>เข้าสู่ระบบ</button></div></div><p className="login-footnote"><Icon name="shield" /> ข้อมูลของคุณได้รับการปกป้องด้วย enterprise-grade security</p></div></main>;
+  return (
+    <AuthScene variant="register">
+      <div className="login-card register-card">
+        <div className="login-card-heading">
+          <span className="login-card-icon"><Icon name="spark" /></span>
+          <div>
+            <span className="panel-kicker">CREATE WORKSPACE</span>
+            <h1>สร้างบัญชี</h1>
+          </div>
+        </div>
+        <p>ตั้งค่าบัญชีสำหรับทีม Supply Chain ของคุณ ใช้เวลาไม่ถึง 1 นาที</p>
+        <form onSubmit={submitRegister}>
+          <label className="form-field">
+            <span>Username</span>
+            <input value={username} onChange={(event) => { setUsername(event.target.value); setUsernameStatus("idle"); }} onBlur={(event) => void inspectUsername(event.target.value)} autoComplete="username" placeholder="ตั้ง username" required />
+            <small className={"username-check" + usernameStatusClass}>{usernameStatusText}</small>
+          </label>
+          <label className="form-field">
+            <span>ชื่อที่ใช้แสดง</span>
+            <input value={fullName} onChange={(event) => setFullName(event.target.value)} autoComplete="name" placeholder="เช่น กิตติ Supply Planner" />
+          </label>
+          <label className="form-field">
+            <span>Email</span>
+            <input value={email} onChange={(event) => setEmail(event.target.value)} type="email" autoComplete="email" placeholder="name@company.com" required />
+          </label>
+          <label className="form-field">
+            <span>Password</span>
+            <input value={password} onChange={(event) => setPassword(event.target.value)} type="password" autoComplete="new-password" minLength={8} placeholder="อย่างน้อย 8 ตัวอักษร" required />
+          </label>
+          <label className="form-field">
+            <span>ยืนยัน Password</span>
+            <input value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} type="password" autoComplete="new-password" minLength={8} placeholder="กรอกรหัสผ่านอีกครั้ง" required />
+          </label>
+          {visibleError && <p className="auth-error" role="alert">{visibleError}</p>}
+          <Button type="submit" disabled={isLoading} icon="arrow">{isLoading ? "กำลังสร้างบัญชี..." : "สร้างบัญชีและเริ่มใช้งาน"}</Button>
+        </form>
+        <div className="auth-switch">มีบัญชีอยู่แล้ว? <button type="button" onClick={onLogin}>เข้าสู่ระบบ</button></div>
+      </div>
+    </AuthScene>
+  );
 }
 
 function EmptyState({ title, detail, action, onClick }: { title: string; detail: string; action?: string; onClick?: () => void }) { return <div className="empty-state"><span className="empty-icon"><Icon name="search" /></span><strong>{title}</strong><span>{detail}</span>{action && <button className="text-button" type="button" onClick={onClick}>{action} <Icon name="arrow" /></button>}</div>; }
