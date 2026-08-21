@@ -4,6 +4,15 @@ import { useEffect, useMemo, useState } from "react";
 import type { ChangeEvent, DragEvent, FormEvent } from "react";
 import { ForecastChart } from "./components/ForecastChart";
 import {
+  changePassword as apiChangePassword,
+  checkUsername,
+  getMe,
+  login as apiLogin,
+  logout as apiLogout,
+  register as apiRegister,
+  type AuthUser,
+} from "./lib/api";
+import {
   alerts,
   demandTrend,
   detailTrend,
@@ -27,7 +36,8 @@ export type AppView =
   | "data"
   | "monitoring"
   | "settings"
-  | "login";
+  | "login"
+  | "register";
 
 type ForecastStage = "setup" | "running" | "result";
 type DataStep = "upload" | "preview" | "mapping" | "quality";
@@ -60,6 +70,7 @@ const pageMeta: Record<AppView, { title: string; eyebrow: string }> = {
   monitoring: { title: "ติดตามผลจริงเทียบ Forecast", eyebrow: "Monitoring" },
   settings: { title: "ตั้งค่าพื้นที่ทำงาน", eyebrow: "Workspace settings" },
   login: { title: "เข้าสู่ระบบ", eyebrow: "Welcome back" },
+  register: { title: "สร้างบัญชี", eyebrow: "Create account" },
 };
 
 const iconGlyphs: Record<string, string> = {
@@ -98,6 +109,7 @@ function Icon({ name, className = "" }: { name: string; className?: string }) {
 
 function viewFromPath(path: string): AppView {
   if (path.startsWith("/login")) return "login";
+  if (path.startsWith("/register")) return "register";
   if (path.startsWith("/forecast")) return "forecast";
   if (path.startsWith("/products")) return "products";
   if (path.startsWith("/alerts")) return "alerts";
@@ -111,7 +123,21 @@ function pathForView(view: AppView) {
   if (view === "forecast") return "/forecast/new";
   if (view === "data") return "/data/upload";
   if (view === "login") return "/login";
+  if (view === "register") return "/register";
   return `/${view}`;
+}
+
+const APP_BASE_PATH = (import.meta.env.VITE_BASE_PATH || "").replace(/\/$/, "");
+
+function stripAppBasePath(path: string) {
+  if (!APP_BASE_PATH || APP_BASE_PATH === "/") return path;
+  if (path === APP_BASE_PATH) return "/";
+  return path.startsWith(`${APP_BASE_PATH}/`) ? path.slice(APP_BASE_PATH.length) || "/" : path;
+}
+
+function addAppBasePath(path: string) {
+  if (!APP_BASE_PATH || APP_BASE_PATH === "/") return path;
+  return path === "/" ? `${APP_BASE_PATH}/` : `${APP_BASE_PATH}${path}`;
 }
 
 function riskLabel(risk: RiskLevel) {
@@ -155,17 +181,30 @@ function Toast({ message, onClose }: { message: string; onClose: () => void }) {
   );
 }
 
+function accountDisplayName(user: AuthUser | null) {
+  return user?.full_name?.trim() || user?.username || "ผู้ใช้งาน";
+}
+
+function accountRoleLabel(user: AuthUser | null) {
+  return user?.role === "admin" ? "Administrator" : "Supply Chain Planner";
+}
+
 function Sidebar({
   activeView,
   isOpen,
   onNavigate,
   onClose,
+  user,
 }: {
   activeView: AppView;
   isOpen: boolean;
   onNavigate: (path: string) => void;
   onClose: () => void;
+  user: AuthUser | null;
 }) {
+  const displayName = accountDisplayName(user);
+  const displayInitial = displayName.charAt(0).toUpperCase();
+
   return (
     <>
       <div className={`sidebar-backdrop ${isOpen ? "is-visible" : ""}`} role="button" tabIndex={0} aria-label="ปิดเมนู" onClick={onClose} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") onClose(); }} />
@@ -226,8 +265,8 @@ function Sidebar({
             <button type="button" onClick={() => window.alert("คู่มือ demo จะพร้อมในเวอร์ชันถัดไป")}>เปิดคู่มือ <Icon name="arrow" /></button>
           </div>
           <div className="sidebar-user">
-            <span className="user-avatar">ก</span>
-            <span><strong>กิตติ พัฒนาภัณฑ์</strong><small>Supply Chain Planner</small></span>
+            <span className="user-avatar">{displayInitial}</span>
+            <span><strong>{displayName}</strong><small>{accountRoleLabel(user)}</small></span>
             <button className="icon-button" onClick={() => onNavigate("/settings")} aria-label="เปิดโปรไฟล์"><Icon name="chevron" /></button>
           </div>
         </div>
@@ -242,12 +281,14 @@ function Topbar({
   onMenu,
   onNavigate,
   onRefresh,
+  userLabel,
 }: {
   title: string;
   eyebrow: string;
   onMenu: () => void;
   onNavigate: (path: string) => void;
   onRefresh: () => void;
+  userLabel?: string;
 }) {
   const [search, setSearch] = useState("");
   const [showNotifications, setShowNotifications] = useState(false);
@@ -286,7 +327,7 @@ function Topbar({
           )}
         </div>
         <button className="icon-button topbar-icon help-button" aria-label="ช่วยเหลือ"><Icon name="help" /></button>
-        <button className="profile-trigger" onClick={() => onNavigate("/settings")} type="button"><span className="user-avatar">ก</span><span>กิตติ</span><span className="profile-chevron">⌄</span></button>
+        <button className="profile-trigger" onClick={() => onNavigate("/settings")} type="button"><span className="user-avatar">{(userLabel || "ผู้ใช้งาน").charAt(0).toUpperCase()}</span><span>{userLabel || "ผู้ใช้งาน"}</span><span className="profile-chevron">⌄</span></button>
       </div>
       <button className="refresh-button" type="button" onClick={onRefresh} aria-label="รีเฟรชข้อมูล"><Icon name="refresh" /></button>
     </header>
@@ -335,15 +376,17 @@ function DashboardView({
   loading,
   onNavigate,
   onRefresh,
+  userName,
 }: {
   loading: boolean;
   onNavigate: (path: string) => void;
   onRefresh: () => void;
+  userName: string;
 }) {
   return (
     <div className="page-content dashboard-page">
       <PageIntro
-        title="สวัสดีครับ, คุณกิตติ 👋"
+        title={"สวัสดีครับ, คุณ" + userName + " 👋"}
         description="นี่คือภาพรวม Demand Forecast ของวันนี้ ตรวจสอบความเสี่ยงและตัดสินใจได้ในหน้าเดียว"
         actions={<><Button variant="secondary" icon="upload" onClick={() => onNavigate("/data/upload")}>นำเข้าข้อมูล</Button><Button icon="plus" onClick={() => onNavigate("/forecast/new")}>สร้าง Forecast ใหม่</Button></>}
       />
@@ -407,6 +450,10 @@ function DashboardView({
 
 function DashboardLoading() {
   return <div className="dashboard-loading"><div className="loading-orb"><Icon name="refresh" /></div><strong>กำลังโหลดข้อมูลล่าสุด</strong><span>เชื่อมต่อกับ Forecast workspace...</span></div>;
+}
+
+function AuthCheckingView() {
+  return <main className="auth-check-screen"><div className="dashboard-loading"><div className="loading-orb"><Icon name="shield" /></div><strong>กำลังตรวจสอบบัญชี</strong><span>กำลังเตรียมพื้นที่ทำงานของคุณ...</span></div></main>;
 }
 
 function KpiCard({ label, value, detail, change, tone, icon, isTextChange = false }: { label: string; value: string; detail: string; change: string; tone: string; icon: string; isTextChange?: boolean }) {
@@ -536,13 +583,126 @@ function MonitoringView({ onNavigate }: { onNavigate: (path: string) => void }) 
 
 function TimelineItem({ date, title, detail, active = false }: { date: string; title: string; detail: string; active?: boolean }) { return <div className={`timeline-item ${active ? "is-active" : ""}`}><span className="timeline-marker"><i /></span><span className="timeline-date">{date}</span><span><strong>{title}</strong><small>{detail}</small></span></div>; }
 
-function SettingsView({ onNavigate }: { onNavigate: (path: string) => void }) { const [emailAlerts, setEmailAlerts] = useState(true); const [autoRefresh, setAutoRefresh] = useState(true); const [compactTable, setCompactTable] = useState(false); return <div className="page-content settings-page"><PageIntro title="ตั้งค่าพื้นที่ทำงาน" description="กำหนดการแจ้งเตือนและรูปแบบการแสดงผลให้เข้ากับวิธีทำงานของทีม" actions={<Button onClick={() => window.alert("บันทึกการตั้งค่าแล้ว")} icon="check">บันทึกการเปลี่ยนแปลง</Button>} /><div className="settings-layout"><div className="settings-nav panel"><button className="settings-nav-item is-active" type="button"><Icon name="settings" /><span><strong>Workspace</strong><small>พื้นที่ทำงาน</small></span><Icon name="chevron" /></button><button className="settings-nav-item" type="button" onClick={() => onNavigate("/data/upload")}><Icon name="database" /><span><strong>Data mapping</strong><small>การจับคู่ข้อมูล</small></span><Icon name="chevron" /></button><button className="settings-nav-item" type="button" onClick={() => window.alert("เปิดจัดการสมาชิกทีม") }><Icon name="grid" /><span><strong>Team members</strong><small>สมาชิกในทีม</small></span><Icon name="chevron" /></button></div><div className="settings-sections"><section className="panel settings-card"><div className="settings-card-heading"><div><span className="panel-kicker">Notifications</span><h3>การแจ้งเตือน</h3></div><span className="settings-heading-icon"><Icon name="bell" /></span></div><ToggleRow title="Email alerts" detail="ส่งอีเมลเมื่อมี High demand alert" checked={emailAlerts} onChange={() => setEmailAlerts((value) => !value)} /><ToggleRow title="Daily summary" detail="สรุป Forecast และความเสี่ยงทุกเช้าเวลา 09:00" checked={true} onChange={() => undefined} /><ToggleRow title="Alert digest" detail="รวมแจ้งเตือน Medium และ Low เป็นรายสัปดาห์" checked={false} onChange={() => undefined} /></section><section className="panel settings-card"><div className="settings-card-heading"><div><span className="panel-kicker">Workspace preferences</span><h3>รูปแบบการใช้งาน</h3></div><span className="settings-heading-icon settings-icon-purple"><Icon name="settings" /></span></div><ToggleRow title="Auto refresh data" detail="อัปเดต Dashboard ทุก 15 นาที" checked={autoRefresh} onChange={() => setAutoRefresh((value) => !value)} /><ToggleRow title="Compact product table" detail="แสดงข้อมูลสินค้าในรูปแบบกระชับ" checked={compactTable} onChange={() => setCompactTable((value) => !value)} /></section><section className="panel workspace-profile-card"><span className="workspace-avatar large-avatar">BH</span><div><span className="panel-kicker">Current workspace</span><h3>BioHealth Manufacturing</h3><p>Thailand · Health supplies · 12 members</p></div><Button variant="secondary" onClick={() => window.alert("เปิดเปลี่ยน workspace")}>เปลี่ยน Workspace</Button></section></div></div></div>; }
+function SettingsView({
+  onNavigate,
+  onLogout,
+  onChangePassword,
+}: {
+  onNavigate: (path: string) => void;
+  onLogout: () => Promise<void>;
+  onChangePassword: (payload: { current_password: string; new_password: string }) => Promise<void>;
+}) {
+  const [emailAlerts, setEmailAlerts] = useState(true);
+  const [autoRefresh, setAutoRefresh] = useState(true);
+  const [compactTable, setCompactTable] = useState(false);
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [securityMessage, setSecurityMessage] = useState("");
+  const [securityLoading, setSecurityLoading] = useState(false);
+
+  async function submitChangePassword(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (newPassword !== confirmPassword) {
+      setSecurityMessage("รหัสผ่านใหม่และการยืนยันรหัสผ่านไม่ตรงกัน");
+      return;
+    }
+    setSecurityLoading(true);
+    setSecurityMessage("");
+    try {
+      await onChangePassword({ current_password: currentPassword, new_password: newPassword });
+      setCurrentPassword("");
+      setNewPassword("");
+      setConfirmPassword("");
+      setSecurityMessage("เปลี่ยนรหัสผ่านสำเร็จ");
+    } catch (error) {
+      setSecurityMessage(error instanceof Error ? error.message : "เปลี่ยนรหัสผ่านไม่สำเร็จ");
+    } finally {
+      setSecurityLoading(false);
+    }
+  }
+
+  return <div className="page-content settings-page"><PageIntro title="ตั้งค่าพื้นที่ทำงาน" description="กำหนดการแจ้งเตือนและรูปแบบการแสดงผลให้เข้ากับวิธีทำงานของทีม" actions={<Button onClick={() => window.alert("บันทึกการตั้งค่าแล้ว")} icon="check">บันทึกการเปลี่ยนแปลง</Button>} /><div className="settings-layout"><div className="settings-nav panel"><button className="settings-nav-item is-active" type="button"><Icon name="settings" /><span><strong>Workspace</strong><small>พื้นที่ทำงาน</small></span><Icon name="chevron" /></button><button className="settings-nav-item" type="button" onClick={() => onNavigate("/data/upload")}><Icon name="database" /><span><strong>Data mapping</strong><small>การจับคู่ข้อมูล</small></span><Icon name="chevron" /></button><button className="settings-nav-item" type="button" onClick={() => window.alert("เปิดจัดการสมาชิกทีม") }><Icon name="grid" /><span><strong>Team members</strong><small>สมาชิกในทีม</small></span><Icon name="chevron" /></button></div><div className="settings-sections"><section className="panel settings-card"><div className="settings-card-heading"><div><span className="panel-kicker">Notifications</span><h3>การแจ้งเตือน</h3></div><span className="settings-heading-icon"><Icon name="bell" /></span></div><ToggleRow title="Email alerts" detail="ส่งอีเมลเมื่อมี High demand alert" checked={emailAlerts} onChange={() => setEmailAlerts((value) => !value)} /><ToggleRow title="Daily summary" detail="สรุป Forecast และความเสี่ยงทุกเช้าเวลา 09:00" checked={true} onChange={() => undefined} /><ToggleRow title="Alert digest" detail="รวมแจ้งเตือน Medium และ Low เป็นรายสัปดาห์" checked={false} onChange={() => undefined} /></section><section className="panel settings-card"><div className="settings-card-heading"><div><span className="panel-kicker">Workspace preferences</span><h3>รูปแบบการใช้งาน</h3></div><span className="settings-heading-icon settings-icon-purple"><Icon name="settings" /></span></div><ToggleRow title="Auto refresh data" detail="อัปเดต Dashboard ทุก 15 นาที" checked={autoRefresh} onChange={() => setAutoRefresh((value) => !value)} /><ToggleRow title="Compact product table" detail="แสดงข้อมูลสินค้าในรูปแบบกระชับ" checked={compactTable} onChange={() => setCompactTable((value) => !value)} /></section><section className="panel settings-card"><div className="settings-card-heading"><div><span className="panel-kicker">Account security</span><h3>เปลี่ยนรหัสผ่าน</h3></div><span className="settings-heading-icon settings-icon-purple"><Icon name="lock" /></span></div><form className="settings-security-form" onSubmit={submitChangePassword}><label className="form-field"><span>รหัสผ่านปัจจุบัน</span><input type="password" value={currentPassword} onChange={(event) => setCurrentPassword(event.target.value)} minLength={1} required /></label><label className="form-field"><span>รหัสผ่านใหม่</span><input type="password" value={newPassword} onChange={(event) => setNewPassword(event.target.value)} minLength={8} required /><small>อย่างน้อย 8 ตัวอักษร</small></label><label className="form-field"><span>ยืนยันรหัสผ่านใหม่</span><input type="password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} minLength={8} required /></label>{securityMessage && <p className={securityMessage === "เปลี่ยนรหัสผ่านสำเร็จ" ? "auth-success" : "auth-error"}>{securityMessage}</p>}<Button type="submit" disabled={securityLoading} icon="lock">{securityLoading ? "กำลังบันทึก..." : "เปลี่ยนรหัสผ่าน"}</Button></form></section><section className="panel workspace-profile-card"><span className="workspace-avatar large-avatar">BH</span><div><span className="panel-kicker">Current workspace</span><h3>BioHealth Manufacturing</h3><p>Thailand · Health supplies · 12 members</p></div><Button variant="danger" onClick={onLogout} icon="close">ออกจากระบบ</Button></section></div></div></div>;
+}
 
 function ToggleRow({ title, detail, checked, onChange }: { title: string; detail: string; checked: boolean; onChange: () => void }) {
   return <div className="toggle-row"><span><strong>{title}</strong><small>{detail}</small></span><button type="button" role="switch" aria-label={title} aria-checked={checked} className={`toggle-control ${checked ? "is-checked" : ""}`} onClick={onChange}><i className="toggle-ui" /></button></div>;
 }
 
-function LoginView({ onLogin }: { onLogin: () => void }) { const [email, setEmail] = useState("planner@biohealth.co"); return <main className="login-screen"><div className="login-decoration"><div className="login-orbit orbit-large" /><div className="login-orbit orbit-small" /><span className="login-deco-dot dot-one" /><span className="login-deco-dot dot-two" /><div className="login-quote"><span className="ai-badge"><Icon name="spark" /> HUMAN + AI</span><h2>เห็น Demand<br />ก่อนตลาด<br /><em>ขยับตัว</em></h2><p>ใช้ข้อมูลที่คุณมี เพื่อวางแผนสิ่งที่กำลังจะเกิดขึ้น</p></div><div className="login-mini-chart"><span>DEMAND SIGNAL</span><div><i style={{ height: "36%" }} /><i style={{ height: "52%" }} /><i style={{ height: "44%" }} /><i style={{ height: "72%" }} /><i style={{ height: "62%" }} /><i style={{ height: "88%" }} /><i style={{ height: "78%" }} /></div></div></div><div className="login-card-wrap"><div className="login-brand"><AppLogo /><span>for modern supply chains</span></div><div className="login-card"><span className="panel-kicker">WELCOME BACK</span><h1>เข้าสู่ระบบ</h1><p>เริ่มต้นวันของคุณด้วยภาพรวม Demand ที่ชัดขึ้น</p><form onSubmit={(event) => { event.preventDefault(); onLogin(); }}><label className="form-field"><span>Email</span><input value={email} onChange={(event) => setEmail(event.target.value)} type="email" required /></label><label className="form-field"><span>Password</span><input defaultValue="password" type="password" required /></label><div className="login-options"><label><input type="checkbox" defaultChecked /> <span>จดจำฉัน</span></label><button type="button" onClick={() => window.alert("ลิงก์ reset password ถูกส่งแล้ว")}>ลืมรหัสผ่าน?</button></div><Button type="submit" icon="arrow">เข้าสู่ Demandly</Button></form><div className="login-divider"><span>หรือ</span></div><button className="sso-button" type="button" onClick={onLogin}><span className="sso-mark">B</span> เข้าสู่ระบบด้วย BioHealth SSO</button></div><p className="login-footnote"><Icon name="shield" /> ข้อมูลของคุณได้รับการปกป้องด้วย enterprise-grade security</p></div></main>; }
+type LoginPayload = { username_or_email: string; password: string };
+type RegisterPayload = { username: string; email: string; password: string; full_name: string };
+
+function LoginView({
+  onLogin,
+  onRegister,
+  isLoading,
+  error,
+}: {
+  onLogin: (payload: LoginPayload) => Promise<void>;
+  onRegister: () => void;
+  isLoading: boolean;
+  error: string;
+}) {
+  const [usernameOrEmail, setUsernameOrEmail] = useState("");
+  const [password, setPassword] = useState("");
+
+  return <main className="login-screen"><div className="login-decoration"><div className="login-orbit orbit-large" /><div className="login-orbit orbit-small" /><span className="login-deco-dot dot-one" /><span className="login-deco-dot dot-two" /><div className="login-quote"><span className="ai-badge"><Icon name="spark" /> HUMAN + AI</span><h2>เห็น Demand<br />ก่อนตลาด<br /><em>ขยับตัว</em></h2><p>ใช้ข้อมูลที่คุณมี เพื่อวางแผนสิ่งที่กำลังจะเกิดขึ้น</p></div><div className="login-mini-chart"><span>DEMAND SIGNAL</span><div><i style={{ height: "36%" }} /><i style={{ height: "52%" }} /><i style={{ height: "44%" }} /><i style={{ height: "72%" }} /><i style={{ height: "62%" }} /><i style={{ height: "88%" }} /><i style={{ height: "78%" }} /></div></div></div><div className="login-card-wrap"><div className="login-brand"><AppLogo /><span>for modern supply chains</span></div><div className="login-card"><span className="panel-kicker">WELCOME BACK</span><h1>เข้าสู่ระบบ</h1><p>เริ่มต้นวันของคุณด้วยภาพรวม Demand ที่ชัดขึ้น</p><form onSubmit={(event) => { event.preventDefault(); void onLogin({ username_or_email: usernameOrEmail, password }); }}><label className="form-field"><span>Username หรือ Email</span><input value={usernameOrEmail} onChange={(event) => setUsernameOrEmail(event.target.value)} autoComplete="username" required /></label><label className="form-field"><span>Password</span><input value={password} onChange={(event) => setPassword(event.target.value)} type="password" autoComplete="current-password" required /></label><div className="login-options"><label><input type="checkbox" defaultChecked /> <span>จดจำฉัน</span></label><button type="button" onClick={onRegister}>สมัครสมาชิก</button></div>{error && <p className="auth-error" role="alert">{error}</p>}<Button type="submit" disabled={isLoading} icon="arrow">{isLoading ? "กำลังเข้าสู่ระบบ..." : "เข้าสู่ Demandly"}</Button></form><div className="login-divider"><span>หรือ</span></div><button className="sso-button" type="button" onClick={onRegister}><span className="sso-mark">+</span> สร้างบัญชีใหม่สำหรับทีม</button></div><p className="login-footnote"><Icon name="shield" /> ข้อมูลของคุณได้รับการปกป้องด้วย enterprise-grade security</p></div></main>;
+}
+
+function RegisterView({
+  onRegister,
+  onLogin,
+  isLoading,
+  error,
+}: {
+  onRegister: (payload: RegisterPayload) => Promise<void>;
+  onLogin: () => void;
+  isLoading: boolean;
+  error: string;
+}) {
+  const [username, setUsername] = useState("");
+  const [fullName, setFullName] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [usernameStatus, setUsernameStatus] = useState<"idle" | "checking" | "available" | "taken">("idle");
+  const [validationError, setValidationError] = useState("");
+
+  async function inspectUsername(value: string) {
+    const normalized = value.trim();
+    if (normalized.length < 3) {
+      setUsernameStatus("idle");
+      return;
+    }
+    setUsernameStatus("checking");
+    try {
+      const result = await checkUsername(normalized);
+      setUsernameStatus(result.available ? "available" : "taken");
+    } catch {
+      setUsernameStatus("idle");
+    }
+  }
+
+  function submitRegister(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (password !== confirmPassword) {
+      setValidationError("รหัสผ่านใหม่และการยืนยันรหัสผ่านไม่ตรงกัน");
+      return;
+    }
+    if (usernameStatus === "taken") {
+      setValidationError("Username นี้ถูกใช้งานแล้ว");
+      return;
+    }
+    setValidationError("");
+    void onRegister({ username, email, password, full_name: fullName });
+  }
+
+  const visibleError = validationError || error;
+  const usernameStatusClass = usernameStatus === "available" ? " is-available" : usernameStatus === "taken" ? " is-taken" : "";
+  const usernameStatusText = usernameStatus === "checking" ? "กำลังตรวจสอบ..." : usernameStatus === "available" ? "Username นี้ใช้ได้" : usernameStatus === "taken" ? "Username นี้ถูกใช้งานแล้ว" : "ใช้ 3–32 ตัวอักษร a-z, 0-9, . _ -";
+
+  return <main className="login-screen"><div className="login-decoration"><div className="login-orbit orbit-large" /><div className="login-orbit orbit-small" /><span className="login-deco-dot dot-one" /><span className="login-deco-dot dot-two" /><div className="login-quote"><span className="ai-badge"><Icon name="spark" /> HUMAN + AI</span><h2>วางแผนได้<br />ก่อน Demand<br /><em>เปลี่ยนทิศ</em></h2><p>สร้าง workspace ของคุณ แล้วเริ่มต้นจากข้อมูลที่ทีมมีอยู่</p></div><div className="login-mini-chart"><span>DEMAND SIGNAL</span><div><i style={{ height: "36%" }} /><i style={{ height: "52%" }} /><i style={{ height: "44%" }} /><i style={{ height: "72%" }} /><i style={{ height: "62%" }} /><i style={{ height: "88%" }} /><i style={{ height: "78%" }} /></div></div></div><div className="login-card-wrap"><div className="login-brand"><AppLogo /><span>for modern supply chains</span></div><div className="login-card"><span className="panel-kicker">GET STARTED</span><h1>สร้างบัญชี</h1><p>เริ่มใช้งาน Demandly สำหรับทีม Supply Chain ของคุณ</p><form onSubmit={submitRegister}><label className="form-field"><span>Username</span><input value={username} onChange={(event) => { setUsername(event.target.value); setUsernameStatus("idle"); }} onBlur={(event) => void inspectUsername(event.target.value)} autoComplete="username" required /><small className={"username-check" + usernameStatusClass}>{usernameStatusText}</small></label><label className="form-field"><span>ชื่อที่ใช้แสดง</span><input value={fullName} onChange={(event) => setFullName(event.target.value)} autoComplete="name" placeholder="เช่น กิตติ Supply Planner" /></label><label className="form-field"><span>Email</span><input value={email} onChange={(event) => setEmail(event.target.value)} type="email" autoComplete="email" required /></label><label className="form-field"><span>Password</span><input value={password} onChange={(event) => setPassword(event.target.value)} type="password" autoComplete="new-password" minLength={8} required /><small className="password-hint">อย่างน้อย 8 ตัวอักษร</small></label><label className="form-field"><span>ยืนยัน Password</span><input value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} type="password" autoComplete="new-password" minLength={8} required /></label>{visibleError && <p className="auth-error" role="alert">{visibleError}</p>}<Button type="submit" disabled={isLoading} icon="arrow">{isLoading ? "กำลังสร้างบัญชี..." : "สร้างบัญชีและเริ่มใช้งาน"}</Button></form><div className="auth-switch">มีบัญชีอยู่แล้ว? <button type="button" onClick={onLogin}>เข้าสู่ระบบ</button></div></div><p className="login-footnote"><Icon name="shield" /> ข้อมูลของคุณได้รับการปกป้องด้วย enterprise-grade security</p></div></main>;
+}
 
 function EmptyState({ title, detail, action, onClick }: { title: string; detail: string; action?: string; onClick?: () => void }) { return <div className="empty-state"><span className="empty-icon"><Icon name="search" /></span><strong>{title}</strong><span>{detail}</span>{action && <button className="text-button" type="button" onClick={onClick}>{action} <Icon name="arrow" /></button>}</div>; }
 
@@ -565,10 +725,15 @@ export function ForecastApp({ initialView, initialPath }: ForecastAppProps) {
   const [forecastSignals, setForecastSignals] = useState(["disease", "seasonality"]);
   const [dataStep, setDataStep] = useState<DataStep>("upload");
   const [fileName, setFileName] = useState("");
+  const [authUser, setAuthUser] = useState<AuthUser | null>(null);
+  const [authToken, setAuthToken] = useState<string | null>(null);
+  const [authReady, setAuthReady] = useState(false);
+  const [authLoading, setAuthLoading] = useState(false);
+  const [authError, setAuthError] = useState("");
 
   useEffect(() => {
     function handlePopState() {
-      const path = window.location.pathname;
+      const path = stripAppBasePath(window.location.pathname);
       setCurrentPath(path);
       setView(viewFromPath(path));
       setSelectedProductId(path.split("/")[2] || "test-kit-a");
@@ -591,9 +756,38 @@ export function ForecastApp({ initialView, initialPath }: ForecastAppProps) {
     return () => { window.clearInterval(interval); window.clearTimeout(timer); };
   }, [forecastStage]);
 
+  useEffect(() => {
+    const path = stripAppBasePath(window.location.pathname);
+    const isPublicPath = path.startsWith("/login") || path.startsWith("/register");
+    const savedToken = window.localStorage.getItem("demandly_access_token");
+    if (!savedToken) {
+      const timer = window.setTimeout(() => {
+        setAuthReady(true);
+        if (!isPublicPath) navigate("/login");
+      }, 0);
+      return () => window.clearTimeout(timer);
+    }
+
+    getMe(savedToken)
+      .then((user) => {
+        setAuthToken(savedToken);
+        setAuthUser(user);
+        setAuthReady(true);
+        if (path === "/") navigate("/dashboard");
+      })
+      .catch(() => {
+        window.localStorage.removeItem("demandly_access_token");
+        setAuthToken(null);
+        setAuthUser(null);
+        setAuthReady(true);
+        if (!isPublicPath) navigate("/login");
+      });
+  }, []);
+
   function navigate(path: string) {
     const nextView = viewFromPath(path);
-    if (typeof window !== "undefined" && window.location.pathname !== path) window.history.pushState({}, "", path);
+    const browserPath = addAppBasePath(path);
+    if (typeof window !== "undefined" && window.location.pathname !== browserPath) window.history.pushState({}, "", browserPath);
     setCurrentPath(path);
     setView(nextView);
     setSidebarOpen(false);
@@ -626,11 +820,70 @@ export function ForecastApp({ initialView, initialPath }: ForecastAppProps) {
     setToast("บันทึกว่าได้ทบทวน Alert แล้ว");
   }
 
-  if (view === "login") return <LoginView onLogin={() => navigate("/dashboard")} />;
+  async function handleLogin(payload: LoginPayload) {
+    setAuthLoading(true);
+    setAuthError("");
+    try {
+      const response = await apiLogin(payload);
+      window.localStorage.setItem("demandly_access_token", response.access_token);
+      setAuthToken(response.access_token);
+      setAuthUser(response.user);
+      navigate("/dashboard");
+      setToast("เข้าสู่ระบบสำเร็จ");
+    } catch (error) {
+      setAuthError(error instanceof Error ? error.message : "เข้าสู่ระบบไม่สำเร็จ");
+    } finally {
+      setAuthLoading(false);
+    }
+  }
+
+  async function handleRegister(payload: RegisterPayload) {
+    setAuthLoading(true);
+    setAuthError("");
+    try {
+      const response = await apiRegister(payload);
+      window.localStorage.setItem("demandly_access_token", response.access_token);
+      setAuthToken(response.access_token);
+      setAuthUser(response.user);
+      navigate("/dashboard");
+      setToast("สร้างบัญชีสำเร็จ");
+    } catch (error) {
+      setAuthError(error instanceof Error ? error.message : "สร้างบัญชีไม่สำเร็จ");
+    } finally {
+      setAuthLoading(false);
+    }
+  }
+
+  async function handleLogout() {
+    const token = authToken;
+    try {
+      if (token) await apiLogout(token);
+    } catch {
+      // Clear the local session even when the API is temporarily unavailable.
+    } finally {
+      window.localStorage.removeItem("demandly_access_token");
+      setAuthToken(null);
+      setAuthUser(null);
+      setAuthError("");
+      navigate("/login");
+    }
+  }
+
+  async function handleChangePassword(payload: { current_password: string; new_password: string }) {
+    if (!authToken) throw new Error("กรุณาเข้าสู่ระบบใหม่อีกครั้ง");
+    await apiChangePassword(authToken, payload);
+    setToast("เปลี่ยนรหัสผ่านสำเร็จ");
+  }
+
+  const isPublicView = view === "login" || view === "register";
+  if (!isPublicView && !authReady) return <AuthCheckingView />;
+  if (view === "login") return <LoginView onLogin={handleLogin} onRegister={() => { setAuthError(""); navigate("/register"); }} isLoading={authLoading} error={authError} />;
+  if (view === "register") return <RegisterView onRegister={handleRegister} onLogin={() => { setAuthError(""); navigate("/login"); }} isLoading={authLoading} error={authError} />;
+  if (!authUser) return <LoginView onLogin={handleLogin} onRegister={() => { setAuthError(""); navigate("/register"); }} isLoading={authLoading} error={authError} />;
 
   const selectedProduct = getProduct(selectedProductId);
   const selectedAlert = getAlert(selectedAlertId);
   const meta = pageMeta[view];
 
-  return <div className="app-shell"><Sidebar activeView={view} isOpen={sidebarOpen} onNavigate={navigate} onClose={() => setSidebarOpen(false)} /><div className="app-main"><Topbar title={meta.title} eyebrow={meta.eyebrow} onMenu={() => setSidebarOpen(true)} onNavigate={navigate} onRefresh={refreshDashboard} /><main className="content-scroll">{view === "dashboard" && <DashboardView loading={dashboardLoading} onNavigate={navigate} onRefresh={refreshDashboard} />}{view === "forecast" && <ForecastView stage={forecastStage} statusIndex={forecastStatusIndex} productId={forecastProductId} region={forecastRegion} period={forecastPeriod} signals={forecastSignals} onProductChange={setForecastProductId} onRegionChange={setForecastRegion} onPeriodChange={setForecastPeriod} onToggleSignal={toggleSignal} onRun={runForecast} onNavigate={navigate} onReset={() => setForecastStage("setup")} />}{view === "data" && <DataView step={dataStep} fileName={fileName} onFile={chooseFile} onStep={setDataStep} onNavigate={navigate} />}{view === "products" && (currentPath.startsWith("/products/") ? <ProductDetailView product={selectedProduct} onNavigate={navigate} /> : <ProductsView query={productQuery} onQuery={setProductQuery} onNavigate={navigate} />)}{view === "alerts" && (currentPath.startsWith("/alerts/") ? <AlertDetailView alert={selectedAlert} isReviewed={reviewedAlerts.includes(selectedAlert.id)} onReview={() => markAlertReviewed(selectedAlert.id)} onNavigate={navigate} /> : <AlertsView filter={alertFilter} onFilter={setAlertFilter} onNavigate={navigate} reviewed={reviewedAlerts} />)}{view === "monitoring" && <MonitoringView onNavigate={navigate} />}{view === "settings" && <SettingsView onNavigate={navigate} />}</main></div><Toast message={toast} onClose={() => setToast("")} /></div>;
+  return <div className="app-shell"><Sidebar activeView={view} isOpen={sidebarOpen} onNavigate={navigate} onClose={() => setSidebarOpen(false)} user={authUser} /><div className="app-main"><Topbar title={meta.title} eyebrow={meta.eyebrow} onMenu={() => setSidebarOpen(true)} onNavigate={navigate} onRefresh={refreshDashboard} userLabel={accountDisplayName(authUser)} /><main className="content-scroll">{view === "dashboard" && <DashboardView loading={dashboardLoading} userName={accountDisplayName(authUser)} onNavigate={navigate} onRefresh={refreshDashboard} />}{view === "forecast" && <ForecastView stage={forecastStage} statusIndex={forecastStatusIndex} productId={forecastProductId} region={forecastRegion} period={forecastPeriod} signals={forecastSignals} onProductChange={setForecastProductId} onRegionChange={setForecastRegion} onPeriodChange={setForecastPeriod} onToggleSignal={toggleSignal} onRun={runForecast} onNavigate={navigate} onReset={() => setForecastStage("setup")} />}{view === "data" && <DataView step={dataStep} fileName={fileName} onFile={chooseFile} onStep={setDataStep} onNavigate={navigate} />}{view === "products" && (currentPath.startsWith("/products/") ? <ProductDetailView product={selectedProduct} onNavigate={navigate} /> : <ProductsView query={productQuery} onQuery={setProductQuery} onNavigate={navigate} />)}{view === "alerts" && (currentPath.startsWith("/alerts/") ? <AlertDetailView alert={selectedAlert} isReviewed={reviewedAlerts.includes(selectedAlert.id)} onReview={() => markAlertReviewed(selectedAlert.id)} onNavigate={navigate} /> : <AlertsView filter={alertFilter} onFilter={setAlertFilter} onNavigate={navigate} reviewed={reviewedAlerts} />)}{view === "monitoring" && <MonitoringView onNavigate={navigate} />}{view === "settings" && <SettingsView onNavigate={navigate} onLogout={handleLogout} onChangePassword={handleChangePassword} />}</main></div><Toast message={toast} onClose={() => setToast("")} /></div>;
 }
