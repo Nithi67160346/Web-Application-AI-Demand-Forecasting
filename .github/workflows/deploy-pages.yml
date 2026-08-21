@@ -39,6 +39,17 @@ jobs:
           VITE_BASE_PATH: /${{ github.event.repository.name }}
         run: npm run build
 
+      - name: Align assets with GitHub Pages project path
+        shell: bash
+        env:
+          REPOSITORY_NAME: ${{ github.event.repository.name }}
+        run: |
+          if [ -d "dist/client/${REPOSITORY_NAME}/_next" ]; then
+            mkdir -p dist/client/_next
+            cp -R "dist/client/${REPOSITORY_NAME}/_next/." dist/client/_next/
+            rm -rf "dist/client/${REPOSITORY_NAME}"
+          fi
+
       - name: Upload static site
         uses: actions/upload-pages-artifact@v3
         with:
