@@ -1,7 +1,5 @@
 ## Project Progress: 60%
 
-`██████░░░░ 60%`
-
 # Demandly — AI Demand Forecasting Platform
 
 ## Microservice Architecture
