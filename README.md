@@ -1,4 +1,20 @@
+## Project Progress: 60%
+
+`██████░░░░ 60%`
+
 # Demandly — AI Demand Forecasting Platform
+
+## Microservice Architecture
+
+<p align="center">
+  <img src="architecture/microservice-architecture.png" alt="Demandly Microservice Architecture" width="900">
+</p>
+
+## Technology Stack
+
+<p align="center">
+  <img src="architecture/technology-stack-diagram.png" alt="Demandly Technology Stack" width="900">
+</p>
 
 Frontend MVP สำหรับ persona Supply Chain Planner จาก User Journey และ
 Frontend Workflow ของ AI Demand Forecasting Platform
