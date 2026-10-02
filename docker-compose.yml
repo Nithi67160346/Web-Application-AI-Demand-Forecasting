@@ -11,7 +11,7 @@ services:
       - demandly_postgres_data:/var/lib/postgresql/data
       - ./api/sql:/project-sql:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-demandly} -d $${POSTGRES_DB:-demandly}"]
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U $${POSTGRES_USER:-demandly} -d $${POSTGRES_DB:-demandly}"]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -36,7 +36,13 @@ services:
       ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-60}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000,http://localhost:5173}
     ports:
-      - "8000:8000"
+      - "${API_PORT:-8000}:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 10s
     volumes:
       - ./api:/app
     depends_on:
@@ -51,13 +57,13 @@ services:
     environment:
       VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://localhost:8000}
     ports:
-      - "3000:3000"
+      - "${WEB_PORT:-3000}:3000"
     volumes:
       - .:/app
       - demandly_web_node_modules:/app/node_modules
     depends_on:
       api:
-        condition: service_started
+        condition: service_healthy
     command: npm run dev -- --hostname 0.0.0.0 --port 3000
 
 volumes:

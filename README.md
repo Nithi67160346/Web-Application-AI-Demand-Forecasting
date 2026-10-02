@@ -55,7 +55,10 @@ Demo mode ใช้ Login/Register จำลองและไม่ต้อง
 เก็บหน้าต่าง CMD ของ Demo ไว้ และกด `Ctrl+C` เพื่อปิด
 โหมด Full-stack เปิด services เบื้องหลัง ปิดหน้าต่าง CMD แล้วเว็บยังทำงาน
 ใช้ `-NoBrowser` เพื่อไม่เปิด browser และ `-NoPause` เมื่อต้องการรันจาก terminal/script
-หากพอร์ต 3000/8000/8080/5432 ถูกใช้งาน ให้ปิดโปรแกรมที่ใช้พอร์ตนั้นก่อนรัน
+ถ้าพอร์ต Web/API ถูกโปรแกรมอื่นใช้อยู่ `start-web.cmd` จะเลือกพอร์ตว่าง
+บันทึก `WEB_PORT`/`API_PORT` และ URL ของ API ใน `.env` พร้อมแสดง URL ที่ใช้จริง
+API ต้องผ่าน health check ก่อนเว็บเริ่มทำงาน หากพอร์ต 8080/5432 ถูกใช้งาน
+ให้แก้ port mapping ของ Adminer/PostgreSQL ใน `docker-compose.yml` ก่อนรัน
 
 ต้องติดตั้ง Docker Desktop แล้วรันจากโฟลเดอร์โปรเจกต์:
 

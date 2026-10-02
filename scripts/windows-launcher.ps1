@@ -21,7 +21,7 @@ function Invoke-Checked {
     param([string]$Command, [string[]]$CommandArguments)
     & $Command @CommandArguments
     if ($LASTEXITCODE -ne 0) {
-        throw "$Command failed (exit code $LASTEXITCODE). Fix the error above and run the launcher again."
+        throw "$Command $($CommandArguments -join ' ') failed (exit code $LASTEXITCODE). Fix the error above and run the launcher again."
     }
 }
 
@@ -39,6 +39,59 @@ function Initialize-Environment {
     $template = [regex]::Replace($template, '(?m)^JWT_SECRET_KEY=.*$', "JWT_SECRET_KEY=$secret")
     [System.IO.File]::WriteAllText($environmentFile, $template, (New-Object System.Text.UTF8Encoding($false)))
     Write-Host 'Created .env with a random JWT secret.'
+}
+
+function Set-EnvironmentValue {
+    param([string]$Name, [string]$Value)
+    $path = Join-Path $projectRoot '.env'
+    $content = [System.IO.File]::ReadAllText($path)
+    $pattern = '(?m)^' + [regex]::Escape($Name) + '=.*$'
+    if ([regex]::IsMatch($content, $pattern)) {
+        $content = [regex]::Replace($content, $pattern, "$Name=$Value")
+    } else { $content = $content.TrimEnd() + "`r`n$Name=$Value`r`n" }
+    [System.IO.File]::WriteAllText($path, $content, (New-Object System.Text.UTF8Encoding($false)))
+}
+
+function Resolve-ServicePorts {
+    # Read resolved settings without printing database credentials or JWT secrets.
+    $configText = & docker compose -f $composeFile config --format json
+    if ($LASTEXITCODE -ne 0) { throw 'Cannot read Compose port configuration.' }
+    $config = ($configText -join "`n") | ConvertFrom-Json
+    $resolved = @{}
+    foreach ($service in @('api', 'web')) {
+        $target = if ($service -eq 'api') { 8000 } else { 3000 }
+        $port = [int](($config.services.$service.ports | Where-Object { $_.target -eq $target }).published)
+        $listeners = [System.Net.NetworkInformation.IPGlobalProperties]::GetIPGlobalProperties().GetActiveTcpListeners()
+        $usedPorts = @($listeners | ForEach-Object { $_.Port })
+        # A running project container may legitimately own the requested port.
+        $previousPreference = $ErrorActionPreference
+        try {
+            $ErrorActionPreference = 'Continue'
+            $mapping = & docker compose -f $composeFile port $service $target 2>$null
+            $ownsPort = $LASTEXITCODE -eq 0 -and ($mapping -match (':' + $port + '$'))
+        } finally { $ErrorActionPreference = $previousPreference }
+        if ($ownsPort -and (Get-Command Get-NetTCPConnection -ErrorAction SilentlyContinue)) {
+            # Docker Desktop's WSL relay is part of its own port forwarding.
+            $foreignListeners = @(Get-NetTCPConnection -State Listen -LocalPort $port -ErrorAction SilentlyContinue |
+                ForEach-Object { Get-Process -Id $_.OwningProcess -ErrorAction SilentlyContinue } |
+                Where-Object { $_.ProcessName -notin @('com.docker.backend', 'wslrelay', 'System') })
+            if ($foreignListeners.Count -gt 0) { $ownsPort = $false }
+        }
+        if ($port -in $usedPorts -and -not $ownsPort) {
+            $oldPort = $port
+            do { $port++ } while ($port -in $usedPorts -and $port -lt 65535)
+            if ($port -ge 65535) { throw "No available port for $service." }
+            Set-EnvironmentValue ($service.ToUpperInvariant() + '_PORT') "$port"
+            Write-Host "Port $oldPort is occupied. Using $port for $service (saved in .env)."
+            if ($service -eq 'api') { Set-EnvironmentValue 'VITE_API_BASE_URL' "http://localhost:$port" }
+            if ($service -eq 'web') {
+                $origins = [string]$config.services.api.environment.CORS_ORIGINS
+                Set-EnvironmentValue 'CORS_ORIGINS' ($origins + ",http://localhost:$port")
+            }
+        }
+        $resolved[$service] = $port
+    }
+    return $resolved
 }
 
 function Test-DockerEngine {
@@ -91,7 +144,7 @@ function Wait-ForHttp {
         $ready = $true
         foreach ($url in $Urls) {
             try {
-                $response = Invoke-WebRequest -Uri $url -UseBasicParsing -TimeoutSec 5
+                $response = Invoke-WebRequest -Uri $url -UseBasicParsing -TimeoutSec 30
                 if ($response.StatusCode -lt 200 -or $response.StatusCode -ge 400) { $ready = $false }
             } catch { $ready = $false }
         }
@@ -117,16 +170,19 @@ try {
                 Invoke-Checked 'docker' @('compose', '-f', $composeFile, 'build', 'api', 'web')
                 Write-Host 'Setup completed. Run start-web.cmd next.' -ForegroundColor Green
             } else {
+                $ports = Resolve-ServicePorts
                 # Build here as well so start is safe on a fresh checkout or after
                 # dependency updates. Docker reuses unchanged build layers.
                 Invoke-Checked 'docker' @('compose', '-f', $composeFile, 'up', '-d', '--build', '--wait', '--wait-timeout', '180')
                 Write-Host 'Waiting for web and API HTTP endpoints...'
-                Wait-ForHttp @('http://localhost:3000/', 'http://localhost:8000/health')
-                Write-Host 'Web:      http://localhost:3000/' -ForegroundColor Green
-                Write-Host 'API docs: http://localhost:8000/docs'
+                $webUrl = "http://localhost:$($ports.web)/"
+                $apiUrl = "http://localhost:$($ports.api)"
+                Wait-ForHttp @($webUrl, "$apiUrl/health")
+                Write-Host "Web:      $webUrl" -ForegroundColor Green
+                Write-Host "API docs: $apiUrl/docs"
                 Write-Host 'Adminer:  http://localhost:8080'
                 Write-Host 'Use stop-web.cmd to stop the services.'
-                if (-not $NoBrowser) { Start-Process 'http://localhost:3000/' }
+                if (-not $NoBrowser) { Start-Process $webUrl }
             }
         }
     } else {
