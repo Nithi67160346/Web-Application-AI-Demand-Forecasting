@@ -9,6 +9,7 @@ services:
       - "5432:5432"
     volumes:
       - demandly_postgres_data:/var/lib/postgresql/data
+      - ./api/sql:/project-sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-demandly} -d $${POSTGRES_DB:-demandly}"]
       interval: 5s
