@@ -1,0 +1,2 @@
+# Preserve CSV bytes (UTF-8 BOM and CRLF) so manifest SHA-256 works on every OS.
+datasets/*.csv -text whitespace=cr-at-eol

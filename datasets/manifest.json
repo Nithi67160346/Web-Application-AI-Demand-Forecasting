@@ -1,0 +1,195 @@
+{
+  "synthetic": true,
+  "schema": [
+    "sale_date",
+    "product_code",
+    "region",
+    "sales_quantity",
+    "inventory"
+  ],
+  "start_date": "2024-10-01",
+  "end_date": "2026-09-30",
+  "quantity_unit": "units sold",
+  "inventory_unit": "units at the observation snapshot; not additive",
+  "products": [
+    {
+      "code": "TK-A-001",
+      "name": "Test Kit A",
+      "base": 120
+    },
+    {
+      "code": "GL-B-014",
+      "name": "Gloves B",
+      "base": 620
+    },
+    {
+      "code": "MK-C-028",
+      "name": "Mask C",
+      "base": 450
+    },
+    {
+      "code": "SY-D-039",
+      "name": "Syringe D",
+      "base": 300
+    },
+    {
+      "code": "AG-E-052",
+      "name": "Antigen E",
+      "base": 90
+    }
+  ],
+  "regions": [
+    "กรุงเทพฯ",
+    "ภาคกลาง",
+    "ภาคตะวันออก",
+    "ภาคเหนือ",
+    "ภาคใต้"
+  ],
+  "datasets": [
+    {
+      "filename": "01_stable_demand.csv",
+      "scenario": "stable",
+      "description": "ยอดขายคงที่ มี noise เล็กน้อย",
+      "rows": 18250,
+      "seed": 2026100301,
+      "grain": "daily product-region total",
+      "bytes": 1004541,
+      "sha256": "bcdeb3a4938aa7d57abc025885acfdc82fb73f18f2c3b2f3b5e52d2d47c12d60",
+      "total_sales_quantity": 6225582,
+      "min_quantity": 65,
+      "max_quantity": 1023,
+      "row_counts": {
+        "products": {
+          "TK-A-001": 3650,
+          "GL-B-014": 3650,
+          "MK-C-028": 3650,
+          "SY-D-039": 3650,
+          "AG-E-052": 3650
+        },
+        "regions": {
+          "กรุงเทพฯ": 3650,
+          "ภาคกลาง": 3650,
+          "ภาคตะวันออก": 3650,
+          "ภาคเหนือ": 3650,
+          "ภาคใต้": 3650
+        }
+      }
+    },
+    {
+      "filename": "02_growth_trend.csv",
+      "scenario": "growth",
+      "description": "แนวโน้มเพิ่มขึ้นประมาณ 90% ตลอดสองปี",
+      "rows": 18250,
+      "seed": 2026100302,
+      "grain": "daily product-region total",
+      "bytes": 1012069,
+      "sha256": "bbe1871e0dd6c121418a3fa82fab0980197e1beb8a287610aa46a07a7fc531b0",
+      "total_sales_quantity": 9021329,
+      "min_quantity": 67,
+      "max_quantity": 1930,
+      "row_counts": {
+        "products": {
+          "TK-A-001": 3650,
+          "GL-B-014": 3650,
+          "MK-C-028": 3650,
+          "SY-D-039": 3650,
+          "AG-E-052": 3650
+        },
+        "regions": {
+          "กรุงเทพฯ": 3650,
+          "ภาคกลาง": 3650,
+          "ภาคตะวันออก": 3650,
+          "ภาคเหนือ": 3650,
+          "ภาคใต้": 3650
+        }
+      }
+    },
+    {
+      "filename": "03_seasonal_demand.csv",
+      "scenario": "seasonal",
+      "description": "ฤดูกาลรายปี พีคประมาณกลางเดือนกรกฎาคม",
+      "rows": 18250,
+      "seed": 2026100303,
+      "grain": "daily product-region total",
+      "bytes": 1004570,
+      "sha256": "dace02e413ddd6b4e537a857e56380d2363bc17d787446c2fa9b21ab77d33235",
+      "total_sales_quantity": 6226594,
+      "min_quantity": 36,
+      "max_quantity": 1472,
+      "row_counts": {
+        "products": {
+          "TK-A-001": 3650,
+          "GL-B-014": 3650,
+          "MK-C-028": 3650,
+          "SY-D-039": 3650,
+          "AG-E-052": 3650
+        },
+        "regions": {
+          "กรุงเทพฯ": 3650,
+          "ภาคกลาง": 3650,
+          "ภาคตะวันออก": 3650,
+          "ภาคเหนือ": 3650,
+          "ภาคใต้": 3650
+        }
+      }
+    },
+    {
+      "filename": "04_demand_spike.csv",
+      "scenario": "spike",
+      "description": "Demand พุ่งและ inventory cover ลดลงช่วง 2026-07-01 ถึง 2026-08-15 ในกรุงเทพฯ/ภาคกลาง",
+      "rows": 18250,
+      "seed": 2026100304,
+      "grain": "daily product-region total",
+      "bytes": 1004385,
+      "sha256": "ca9ebf49d6160dc72bfcfd534fac4623a02914fb5afbcdfca9c216d1c0c0a62f",
+      "total_sales_quantity": 6324199,
+      "min_quantity": 65,
+      "max_quantity": 2311,
+      "row_counts": {
+        "products": {
+          "TK-A-001": 3650,
+          "GL-B-014": 3650,
+          "MK-C-028": 3650,
+          "SY-D-039": 3650,
+          "AG-E-052": 3650
+        },
+        "regions": {
+          "กรุงเทพฯ": 3650,
+          "ภาคกลาง": 3650,
+          "ภาคตะวันออก": 3650,
+          "ภาคเหนือ": 3650,
+          "ภาคใต้": 3650
+        }
+      }
+    },
+    {
+      "filename": "05_large_skewed_sales.csv",
+      "scenario": "large_skewed",
+      "description": "ธุรกรรม 200,000 แถว สินค้า Test Kit A ประมาณ 70% และกรุงเทพฯ ประมาณ 60%",
+      "rows": 200000,
+      "seed": 2026100305,
+      "grain": "individual sales line; multiple lines per date/product/region",
+      "bytes": 10709606,
+      "sha256": "106f87becea53b916199e53f61bdb61b68ede0cca2140aa09ed6c88302dfa633",
+      "total_sales_quantity": 2818156,
+      "min_quantity": 3,
+      "max_quantity": 51,
+      "row_counts": {
+        "products": {
+          "TK-A-001": 139937,
+          "SY-D-039": 12037,
+          "AG-E-052": 8011,
+          "MK-C-028": 15908,
+          "GL-B-014": 24107
+        },
+        "regions": {
+          "กรุงเทพฯ": 119856,
+          "ภาคใต้": 13953,
+          "ภาคเหนือ": 15992,
+          "ภาคกลาง": 30056,
+          "ภาคตะวันออก": 20143
+        }
+      }
+    }
+  ]
+}

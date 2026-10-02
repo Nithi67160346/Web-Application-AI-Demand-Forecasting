@@ -1,0 +1,55 @@
+name: demandly-indexing-lab
+
+x-pg-common: &pg-common
+  image: postgres:16-alpine
+  environment:
+    POSTGRES_DB: demandly_lab
+    POSTGRES_USER: student
+    POSTGRES_PASSWORD: student
+  healthcheck:
+    # TCP is available only after the entrypoint's temporary init server exits.
+    test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U student -d demandly_lab"]
+    interval: 5s
+    timeout: 5s
+    retries: 60
+  shm_size: 256mb
+
+services:
+  pg_with_index:
+    <<: *pg-common
+    ports:
+      - "127.0.0.1:15432:5432"
+    volumes:
+      - with_index_data:/var/lib/postgresql/data
+      - ./sql/00-users.sql:/docker-entrypoint-initdb.d/00-users.sql:ro
+      - ../api/sql/001-sales-records.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+      - ./sql/02-seed.sql:/docker-entrypoint-initdb.d/02-seed.sql:ro
+      - ../api/sql/002-sales-indexes.sql:/docker-entrypoint-initdb.d/03-indexes.sql:ro
+      - ./labs:/labs:ro
+
+  pg_no_index:
+    <<: *pg-common
+    ports:
+      - "127.0.0.1:15433:5432"
+    volumes:
+      - no_index_data:/var/lib/postgresql/data
+      - ./sql/00-users.sql:/docker-entrypoint-initdb.d/00-users.sql:ro
+      - ../api/sql/001-sales-records.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+      - ./sql/02-seed.sql:/docker-entrypoint-initdb.d/02-seed.sql:ro
+      - ./labs:/labs:ro
+
+  adminer:
+    image: adminer:4
+    environment:
+      ADMINER_DEFAULT_SERVER: pg_with_index
+    ports:
+      - "127.0.0.1:18080:8080"
+    depends_on:
+      pg_with_index:
+        condition: service_healthy
+      pg_no_index:
+        condition: service_healthy
+
+volumes:
+  with_index_data:
+  no_index_data:

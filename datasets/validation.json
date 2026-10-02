@@ -1,0 +1,76 @@
+{
+  "validated": true,
+  "total_rows": 273000,
+  "datasets": [
+    {
+      "file": "01_stable_demand.csv",
+      "rows": 18250,
+      "schema_valid": true,
+      "sha256_verified": true,
+      "date_range_valid": true,
+      "scenario_verified": true,
+      "unique_date_product_region_keys": 18250,
+      "identical_value_rows_beyond_first": 0,
+      "checks": {
+        "last_30_vs_first_30_mean_ratio": 1.0045
+      }
+    },
+    {
+      "file": "02_growth_trend.csv",
+      "rows": 18250,
+      "schema_valid": true,
+      "sha256_verified": true,
+      "date_range_valid": true,
+      "scenario_verified": true,
+      "unique_date_product_region_keys": 18250,
+      "identical_value_rows_beyond_first": 0,
+      "checks": {
+        "last_30_vs_first_30_mean_ratio": 1.8473
+      }
+    },
+    {
+      "file": "03_seasonal_demand.csv",
+      "rows": 18250,
+      "schema_valid": true,
+      "sha256_verified": true,
+      "date_range_valid": true,
+      "scenario_verified": true,
+      "unique_date_product_region_keys": 18250,
+      "identical_value_rows_beyond_first": 0,
+      "checks": {
+        "last_30_vs_first_30_mean_ratio": 1.2299,
+        "july_2026_vs_january_2026_mean_ratio": 2.5996
+      }
+    },
+    {
+      "file": "04_demand_spike.csv",
+      "rows": 18250,
+      "schema_valid": true,
+      "sha256_verified": true,
+      "date_range_valid": true,
+      "scenario_verified": true,
+      "unique_date_product_region_keys": 18250,
+      "identical_value_rows_beyond_first": 0,
+      "checks": {
+        "last_30_vs_first_30_mean_ratio": 1.0034,
+        "bangkok_test_kit_july_vs_june_mean_ratio": 2.4627,
+        "bangkok_test_kit_july_average_inventory_cover_days": 2.0272
+      }
+    },
+    {
+      "file": "05_large_skewed_sales.csv",
+      "rows": 200000,
+      "schema_valid": true,
+      "sha256_verified": true,
+      "date_range_valid": true,
+      "scenario_verified": true,
+      "unique_date_product_region_keys": 15248,
+      "identical_value_rows_beyond_first": 4072,
+      "checks": {
+        "last_30_vs_first_30_mean_ratio": 0.9854,
+        "test_kit_row_share": 0.6997,
+        "bangkok_row_share": 0.5993
+      }
+    }
+  ]
+}

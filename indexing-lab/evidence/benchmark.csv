@@ -1,0 +1,15 @@
+query,service,median_ms,min_ms,max_ms,nodes,indexes,shared_hit_blocks,shared_read_blocks
+exact_date,pg_no_index,69.758,62.881,74.002,"Gather, Seq Scan",,5020,4326
+exact_date,pg_with_index,0.754,0.461,1.056,"Bitmap Heap Scan, Bitmap Index Scan",idx_sales_user_date,142,0
+product_region_range,pg_no_index,67.725,62.39,76.009,"Gather, Seq Scan",,5250,4096
+product_region_range,pg_with_index,0.196,0.181,0.28,"Bitmap Heap Scan, Bitmap Index Scan",idx_sales_user_product_region_date,27,0
+latest_page,pg_no_index,61.217,60.077,63.872,"Gather Merge, Limit, Seq Scan, Sort",,5518,3916
+latest_page,pg_with_index,0.226,0.217,0.33,"Index Scan, Limit",idx_sales_user_product_region_date,53,0
+cursor_page,pg_no_index,67.724,61.474,74.504,"Gather Merge, Limit, Seq Scan, Sort",,5784,3592
+cursor_page,pg_with_index,0.315,0.241,0.417,"Index Scan, Limit",idx_sales_user_product_region_date,53,0
+daily_totals,pg_no_index,78.085,59.452,96.832,"Aggregate, Gather Merge, Seq Scan, Sort",,6084,3336
+daily_totals,pg_with_index,0.315,0.179,0.467,"Aggregate, Bitmap Heap Scan, Bitmap Index Scan, Sort",idx_sales_user_product_region_date,30,0
+count_date,pg_no_index,68.388,59.101,71.956,"Aggregate, Gather, Seq Scan",,6202,3144
+count_date,pg_with_index,0.2,0.15,0.282,"Aggregate, Index Only Scan",idx_sales_user_date,5,0
+wide_range,pg_no_index,82.02,80.458,84.851,"Aggregate, Gather, Seq Scan",,6458,2888
+wide_range,pg_with_index,89.692,81.188,90.818,"Aggregate, Gather, Seq Scan",,2985,6361

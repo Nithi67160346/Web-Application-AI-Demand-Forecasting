@@ -65,7 +65,30 @@ docker-compose.yml โดยมี JWT authentication และ endpoint หล�
 ก่อนนำไปใช้งานจริงให้คัดลอก .env.example เป็น .env และเปลี่ยน
 JWT_SECRET_KEY เป็นค่าที่สุ่มและเก็บเป็นความลับ
 
-## เริ่มต้นใช้งาน
+## Database Indexing Workshop
+
+เพิ่มฐานข้อมูลยอดขายจริงและ B-tree index สำหรับค้นตามผู้ใช้ สินค้า ภูมิภาค
+และวันที่ พร้อม `POST /sales/batch`, `GET /sales` (cursor pagination)
+และ `GET /sales/daily` สำหรับข้อมูลกราฟ/Forecast
+
+ชุดทดลองตาม `indexing-lab_02.zip` มี PostgreSQL สองฐาน ข้อมูลเหมือนกัน
+1,000,000 แถว เปรียบเทียบ EXPLAIN ANALYZE, พื้นที่ และต้นทุน INSERT
+แยกจากฐานโปรเจกต์หลักโดยใช้พอร์ต 15432/15433/18080:
+
+```powershell
+docker compose -f indexing-lab/docker-compose.yml up -d --wait --wait-timeout 300
+python indexing-lab/benchmark.py --runs 5
+```
+
+ดู [คู่มือทดลองและนำ index ไปใช้ในฐานเดิม](indexing-lab/README.md)
+และ [แบบรายงานสำหรับนิสิต](indexing-lab/REPORT-TEMPLATE.md)
+Frontend Forecast/Upload ยังเป็น demo; API ยอดขายใหม่นี้ทำงานกับฐานข้อมูลจริง
+
+มี [Dataset จำลอง 5 สถานการณ์](datasets/README.md) รวม 273,000 แถว
+สำหรับทดลองยอดขายคงที่, growth, seasonality, demand spike และข้อมูลใหญ่ที่กระจายไม่เท่ากัน
+พร้อม CSV และสคริปต์ตรวจ/นำเข้าผ่าน Sales API
+
+## เริ่มต้นใช้งาน Frontend
 
 ต้องใช้ Node.js `>=22.13.0`
 

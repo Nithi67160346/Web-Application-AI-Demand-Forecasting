@@ -34,6 +34,9 @@ yarn-error.log*
 !api/.env.example
 __pycache__/
 *.py[cod]
+.venv/
+.cache/
+indexing-lab/results/
 
 # vercel
 .vercel

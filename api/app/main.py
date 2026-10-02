@@ -23,6 +23,7 @@ from .schemas import (
     UsersPage,
 )
 from .security import create_access_token, hash_password, verify_password
+from .sales import router as sales_router
 
 
 settings = get_settings()
@@ -37,7 +38,7 @@ async def lifespan(_: FastAPI):
 app = FastAPI(
     title=settings.app_name,
     version="1.0.0",
-    description="Authentication and user management API for the Demandly project.",
+    description="Authentication, user management and indexed sales history API for the Demandly project.",
     lifespan=lifespan,
 )
 app.add_middleware(
@@ -47,6 +48,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.include_router(sales_router)
 
 
 def normalized_email(email: str | None) -> str | None:

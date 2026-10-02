@@ -1,6 +1,6 @@
 # Demandly REST API
 
-FastAPI service สำหรับ authentication และ user management ของโปรเจกต์
+FastAPI service สำหรับ authentication, user management และยอดขายจริงที่ค้นผ่าน database indexes
 
 ## Run with Docker Compose
 
@@ -19,6 +19,23 @@ docker compose up --build
 ซึ่งรองรับ MySQL/MariaDB โดยให้เลือก System เป็น PostgreSQL และ Server เป็น `db`
 
 ## Endpoints
+
+### Sales history และ Database Indexing
+
+- `POST /sales/batch`: bulk insert 1–1,000 แถว สำหรับผู้ใช้ที่ login
+- `GET /sales`: filter `product_code`, `region`, `start_date`, `end_date` (exclusive)
+  และ `limit` 1–100; ใช้ `next_cursor` เป็น `cursor` ของหน้าถัดไปกับ filter เดิม
+- `GET /sales/daily`: รวมยอดรายวัน ช่วงไม่เกิน 366 วัน; ต้องระบุ start/end
+
+ทุก endpoint ต้องใช้ Bearer token และอ่าน/เขียนเฉพาะยอดขายของผู้ใช้ปัจจุบัน
+ตารางใหม่ `sales_records` มี composite index สำหรับ product/region/date
+และ index สำหรับ user/date โดย SQLAlchemy สร้างให้เมื่อสร้างตารางใหม่
+ฐานที่มีตารางเดิมใช้ `sql/001-sales-records.sql` และ `sql/002-sales-indexes.sql`
+ผ่าน psql; CREATE INDEX CONCURRENTLY ต้องรันนอก transaction
+
+ดู [คู่มือ indexing lab](../indexing-lab/README.md) สำหรับข้อมูล 1 ล้านแถว
+บททดลองตาม ZIP, วิธีวัดผล และ migration ของฐานเดิม
+ข้อมูล Sales จริงส่วนนี้ยังไม่ได้เชื่อมเข้า Frontend demo หรือโมเดล AI
 
 ### Authentication
 

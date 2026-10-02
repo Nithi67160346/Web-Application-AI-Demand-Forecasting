@@ -7,4 +7,8 @@ dist
 work
 .git
 api
+.venv
+.cache
+indexing-lab
+datasets
 *.log
