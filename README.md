@@ -33,6 +33,30 @@ Authentication และ User Management เชื่อมกับ FastAPI RES
 
 ## Full-stack ด้วย FastAPI และ Docker Compose
 
+บน Windows ใช้ไฟล์ CMD ในโฟลเดอร์หลักได้โดยดับเบิลคลิก:
+
+1. `setup.cmd` — เตรียม `.env` พร้อม JWT secret ที่สุ่มใหม่เมื่อยังไม่มีไฟล์
+   ดาวน์โหลด images และ build API/Web (ใช้ Docker Desktop)
+2. `start-web.cmd` — เปิด Web, API, PostgreSQL และ Adminer แล้วเปิด browser
+3. `stop-web.cmd` — ปิด services โดยเก็บข้อมูล PostgreSQL ไว้
+
+ไม่ต้องติดตั้ง Node.js/Python บนเครื่องเมื่อใช้โหมด Docker
+ไฟล์ `.env` ที่มีอยู่แล้วจะใช้ต่อ หาก Docker ยังไม่เปิด launcher จะลองเปิด
+Docker Desktop และรอ engine ก่อนทำงาน
+
+ถ้าต้องการเปิดเฉพาะ Frontend Demo ใช้ Node.js `>=22.13.0` แล้วรัน:
+
+```cmd
+setup.cmd -Mode demo
+start-web.cmd -Mode demo
+```
+
+Demo mode ใช้ Login/Register จำลองและไม่ต้องใช้ API/PostgreSQL
+เก็บหน้าต่าง CMD ของ Demo ไว้ และกด `Ctrl+C` เพื่อปิด
+โหมด Full-stack เปิด services เบื้องหลัง ปิดหน้าต่าง CMD แล้วเว็บยังทำงาน
+ใช้ `-NoBrowser` เพื่อไม่เปิด browser และ `-NoPause` เมื่อต้องการรันจาก terminal/script
+หากพอร์ต 3000/8000/8080/5432 ถูกใช้งาน ให้ปิดโปรแกรมที่ใช้พอร์ตนั้นก่อนรัน
+
 ต้องติดตั้ง Docker Desktop แล้วรันจากโฟลเดอร์โปรเจกต์:
 
     docker compose up --build

@@ -11,4 +11,7 @@ api
 .cache
 indexing-lab
 datasets
+.env
+.env.*
+!.env.example
 *.log
