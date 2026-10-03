@@ -13,6 +13,8 @@ Forecast คำนวณจากไฟล์จริง, Review และ Moni
 หาก Docker engine เปิดไม่ได้ ใช้ `setup-local.cmd` แล้ว `start-local.cmd`
 เพื่อเปิดระบบเต็มกับ PostgreSQL แบบ Local; ปิดด้วย `stop-local.cmd`.
 
+ความคืบหน้า 80 %
+
 # Demandly — AI Demand Forecasting Platform
 
 ## Microservice Architecture
