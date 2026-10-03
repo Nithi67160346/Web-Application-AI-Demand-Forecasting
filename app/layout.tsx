@@ -10,8 +10,8 @@ export const metadata: Metadata = {
   title: "Demandly · AI Demand Forecasting",
   description: "วางแผน Demand และ Inventory ด้วย AI ที่อธิบายได้ สำหรับทีม Supply Chain",
   icons: {
-    icon: "/favicon.svg",
-    shortcut: "/favicon.svg",
+    icon: `${import.meta.env.VITE_BASE_PATH || ""}/favicon.svg`,
+    shortcut: `${import.meta.env.VITE_BASE_PATH || ""}/favicon.svg`,
   },
 };
 

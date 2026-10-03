@@ -1,5 +1,19 @@
 # การตรวจหน้าจอเดิมที่เชื่อมกับฐานข้อมูล
 
+## Interactive demo สำหรับ GitHub Pages (3 ตุลาคม 2026)
+
+- Browser workflow tests 6 กรณีผ่าน: CSV quoted/multiline/zero, invalid import atomicity,
+  duplicate acknowledgement/idempotence, Forecast cutoff และ stock snapshot,
+  Monitoring/replace lineage, persistence ของ settings/product/review,
+  concurrent tabs และ XLSX date/shared strings/column mapping/zero.
+- ทดสอบ static export ที่ path /Web-Application-AI-Demand-Forecasting/ ผ่าน browser:
+  เปิด demo ไม่ใช้รหัสผ่าน, อัปโหลด CSV 140 รายการ, Forecast 30 วันรวม 3,255 หน่วย,
+  stock Alert, บันทึก Review, นำเข้า Actual 7 วัน และ Monitoring แสดง Live WAPE 4.86%.
+- Refresh หน้ารายละเอียด Forecast ผ่าน static 404 fallback แล้วยังเปิดผลที่บันทึกไว้ได้.
+- Demo เริ่มว่างและไม่มี server-side user/database; ข้อมูลตัวอย่างต้องดาวน์โหลดแล้วอัปโหลดเอง.
+  บัญชีและ PostgreSQL ในระบบเต็มไม่ถูกเปลี่ยนจากการใช้งาน Pages.
+- ESLint, TypeScript, build ระบบเต็ม และ rendered-route tests 2 กรณีผ่าน.
+
 ตรวจวันที่ 3 ตุลาคม 2026 (Asia/Bangkok) ก่อนเผยแพร่การแก้ไขขึ้น branch main ตามคำขอของผู้ใช้.
 
 - API behavioral tests 20 กรณีผ่าน รวม product summary แยกพื้นที่ทำงาน และ Forecast 180 วันตาม cutoff.

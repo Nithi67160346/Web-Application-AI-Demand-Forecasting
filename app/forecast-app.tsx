@@ -222,14 +222,7 @@ function Sidebar({
           </button>
         </div>
 
-        {!isStaticDemo ? <label className="workspace-switcher live-workspace-switcher"><span className="workspace-avatar">{(workspaceMeta?.workspace.name || "WS").slice(0,2).toUpperCase()}</span><span className="workspace-copy"><select aria-label="เลือกพื้นที่ทำงาน" value={workspaceMeta?.workspace.id ?? ""} onChange={event => onWorkspaceChange?.(Number(event.target.value))}>{workspaceMeta?.workspace.workspaces.map(w => <option key={w.id} value={w.id}>{w.name.replace(/ · Mock Demand Lab$/, " · Workspace")}</option>)}{!workspaceMeta && <option value="">กำลังโหลดพื้นที่ทำงาน</option>}</select><small>{workspaceMeta?.workspace.role || "Workspace"}</small></span></label> : <button className="workspace-switcher" type="button">
-          <span className="workspace-avatar">BH</span>
-          <span className="workspace-copy">
-            <strong>BioHealth Manufacturing</strong>
-            <small>Supply chain workspace</small>
-          </span>
-          <span className="workspace-chevron">⌄</span>
-        </button>}
+        <label className="workspace-switcher live-workspace-switcher"><span className="workspace-avatar">{(workspaceMeta?.workspace.name || "WS").slice(0,2).toUpperCase()}</span><span className="workspace-copy"><select aria-label="เลือกพื้นที่ทำงาน" value={workspaceMeta?.workspace.id ?? ""} onChange={event => onWorkspaceChange?.(Number(event.target.value))}>{workspaceMeta?.workspace.workspaces.map(w => <option key={w.id} value={w.id}>{w.name.replace(/ · Mock Demand Lab$/, " · Workspace")}</option>)}{!workspaceMeta && <option value="">กำลังโหลดพื้นที่ทำงาน</option>}</select><small>{workspaceMeta?.workspace.role || "Workspace"}</small></span></label>
 
         <nav className="sidebar-nav" aria-label="เมนูหลัก">
           <span className="nav-section-label">WORKSPACE</span>
@@ -245,7 +238,7 @@ function Sidebar({
                 <strong>{item.label}</strong>
                 <small>{item.caption}</small>
               </span>
-              {item.id === "alerts" && <span className="nav-count">{isStaticDemo ? 3 : workspaceMeta?.pending ?? 0}</span>}
+              {item.id === "alerts" && <span className="nav-count">{workspaceMeta?.pending ?? 0}</span>}
             </button>
           ))}
 
@@ -298,7 +291,7 @@ function Topbar({
   userLabel?: string;
   liveAlerts?: LiveMeta["alerts"];
 }) {
-  const notifications = isStaticDemo ? alerts : liveAlerts ?? [];
+  const notifications = liveAlerts ?? [];
   const [search, setSearch] = useState("");
   const [showNotifications, setShowNotifications] = useState(false);
 
@@ -933,7 +926,8 @@ export function ForecastApp({ initialView, initialPath }: ForecastAppProps) {
         setAuthToken(savedToken);
         setAuthUser(user);
         setAuthReady(true);
-        if (path === "/") navigate("/dashboard");
+        if (path === "/" || isPublicPath) navigate("/dashboard");
+        else navigate(path + window.location.search);
       })
       .catch(() => {
         window.localStorage.removeItem("demandly_access_token");
@@ -959,7 +953,7 @@ export function ForecastApp({ initialView, initialPath }: ForecastAppProps) {
   }
 
   function refreshDashboard() {
-    if (!isStaticDemo) {
+    if (authToken) {
       setLiveRefresh(value => value + 1);
       return;
     }
@@ -1057,6 +1051,7 @@ export function ForecastApp({ initialView, initialPath }: ForecastAppProps) {
 
   const isPublicView = view === "login" || view === "register";
   if (!isPublicView && !authReady) return <AuthCheckingView />;
+  if (isStaticDemo && isPublicView) return <AuthScene variant="login"><div className="auth-panel"><span className="panel-kicker">INTERACTIVE DEMO</span><h1>ทดลองใช้งาน Demandly</h1><p>นำเข้า CSV หรือ Excel ของคุณเอง แล้วทดลอง Forecast, Alerts และ Monitoring บนหน้าจอเดิม</p><p>ข้อมูลบันทึกเฉพาะเบราว์เซอร์นี้ ไม่ต้องสมัครบัญชีหรือใช้รหัสผ่าน และไม่ใช่พื้นที่ทำงานร่วมกันของทีม</p><Button disabled={authLoading} onClick={()=>void handleLogin({username_or_email:"demo",password:""})} icon="arrow">{authLoading?"กำลังเปิดพื้นที่ทำงาน...":"เริ่มทดลองใช้งาน"}</Button>{authError&&<p className="auth-error" role="alert">{authError}</p>}</div></AuthScene>;
   if (view === "login") return <LoginView onLogin={handleLogin} onRegister={() => { setAuthError(""); navigate("/register"); }} isLoading={authLoading} error={authError} />;
   if (view === "register") return <RegisterView onRegister={handleRegister} onLogin={() => { setAuthError(""); navigate("/login"); }} isLoading={authLoading} error={authError} />;
   if (!authUser) return <LoginView onLogin={handleLogin} onRegister={() => { setAuthError(""); navigate("/register"); }} isLoading={authLoading} error={authError} />;
@@ -1065,5 +1060,5 @@ export function ForecastApp({ initialView, initialPath }: ForecastAppProps) {
   const selectedAlert = getAlert(selectedAlertId);
   const meta = pageMeta[view];
 
-  return <div className="app-shell"><Sidebar activeView={view} isOpen={sidebarOpen} onNavigate={navigate} onClose={() => setSidebarOpen(false)} user={authUser} workspaceMeta={liveMeta} onWorkspaceChange={setLiveWorkspaceId} /><div className="app-main"><Topbar title={meta.title} eyebrow={meta.eyebrow} onMenu={() => setSidebarOpen(true)} onNavigate={navigate} onRefresh={refreshDashboard} userLabel={accountDisplayName(authUser)} liveAlerts={liveMeta?.alerts} /><main className="content-scroll">{!isStaticDemo && authToken ? <LiveWorkspace key={liveWorkspaceId ?? "own"} token={authToken} user={authUser} view={view} path={currentPath} workspaceId={liveWorkspaceId} refreshKey={liveRefresh} onMetadata={setLiveMeta} onNavigate={navigate} onLogout={handleLogout} onChangePassword={handleChangePassword} /> : <>{view === "dashboard" && <DashboardView loading={dashboardLoading} userName={accountDisplayName(authUser)} onNavigate={navigate} onRefresh={refreshDashboard} />}{view === "forecast" && <ForecastView stage={forecastStage} statusIndex={forecastStatusIndex} productId={forecastProductId} region={forecastRegion} period={forecastPeriod} signals={forecastSignals} onProductChange={setForecastProductId} onRegionChange={setForecastRegion} onPeriodChange={setForecastPeriod} onToggleSignal={toggleSignal} onRun={runForecast} onNavigate={navigate} onReset={() => setForecastStage("setup")} />}{view === "data" && <DataView step={dataStep} fileName={fileName} onFile={chooseFile} onStep={setDataStep} onNavigate={navigate} />}{view === "products" && (currentPath.startsWith("/products/") ? <ProductDetailView product={selectedProduct} onNavigate={navigate} /> : <ProductsView query={productQuery} onQuery={setProductQuery} onNavigate={navigate} />)}{view === "alerts" && (currentPath.startsWith("/alerts/") ? <AlertDetailView alert={selectedAlert} isReviewed={reviewedAlerts.includes(selectedAlert.id)} onReview={() => markAlertReviewed(selectedAlert.id)} onNavigate={navigate} /> : <AlertsView filter={alertFilter} onFilter={setAlertFilter} onNavigate={navigate} reviewed={reviewedAlerts} />)}{view === "monitoring" && <MonitoringView onNavigate={navigate} />}{view === "settings" && <SettingsView onNavigate={navigate} onLogout={handleLogout} onChangePassword={handleChangePassword} />}</>}</main></div><Toast message={toast} onClose={() => setToast("")} /></div>;
+  return <div className="app-shell"><Sidebar activeView={view} isOpen={sidebarOpen} onNavigate={navigate} onClose={() => setSidebarOpen(false)} user={authUser} workspaceMeta={liveMeta} onWorkspaceChange={setLiveWorkspaceId} /><div className="app-main"><Topbar title={meta.title} eyebrow={meta.eyebrow} onMenu={() => setSidebarOpen(true)} onNavigate={navigate} onRefresh={refreshDashboard} userLabel={accountDisplayName(authUser)} liveAlerts={liveMeta?.alerts} /><main className="content-scroll">{authToken ? <LiveWorkspace key={liveWorkspaceId ?? "own"} token={authToken} user={authUser} view={view} path={currentPath} workspaceId={liveWorkspaceId} refreshKey={liveRefresh} onMetadata={setLiveMeta} onNavigate={navigate} onLogout={handleLogout} onChangePassword={handleChangePassword} /> : <>{view === "dashboard" && <DashboardView loading={dashboardLoading} userName={accountDisplayName(authUser)} onNavigate={navigate} onRefresh={refreshDashboard} />}{view === "forecast" && <ForecastView stage={forecastStage} statusIndex={forecastStatusIndex} productId={forecastProductId} region={forecastRegion} period={forecastPeriod} signals={forecastSignals} onProductChange={setForecastProductId} onRegionChange={setForecastRegion} onPeriodChange={setForecastPeriod} onToggleSignal={toggleSignal} onRun={runForecast} onNavigate={navigate} onReset={() => setForecastStage("setup")} />}{view === "data" && <DataView step={dataStep} fileName={fileName} onFile={chooseFile} onStep={setDataStep} onNavigate={navigate} />}{view === "products" && (currentPath.startsWith("/products/") ? <ProductDetailView product={selectedProduct} onNavigate={navigate} /> : <ProductsView query={productQuery} onQuery={setProductQuery} onNavigate={navigate} />)}{view === "alerts" && (currentPath.startsWith("/alerts/") ? <AlertDetailView alert={selectedAlert} isReviewed={reviewedAlerts.includes(selectedAlert.id)} onReview={() => markAlertReviewed(selectedAlert.id)} onNavigate={navigate} /> : <AlertsView filter={alertFilter} onFilter={setAlertFilter} onNavigate={navigate} reviewed={reviewedAlerts} />)}{view === "monitoring" && <MonitoringView onNavigate={navigate} />}{view === "settings" && <SettingsView onNavigate={navigate} onLogout={handleLogout} onChangePassword={handleChangePassword} />}</>}</main></div><Toast message={toast} onClose={() => setToast("")} /></div>;
 }

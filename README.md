@@ -5,6 +5,11 @@
 ดู [คู่มือใช้งาน](docs/USER-GUIDE.md), [ดูแลระบบ/backup/deployment](docs/OPERATIONS.md)
 และ [ผลทดสอบระบบ](docs/VALIDATION.md).
 
+ทดลองออนไลน์: [Demandly interactive demo](https://nithi67160346.github.io/Web-Application-AI-Demand-Forecasting/).
+กด **เริ่มทดลองใช้งาน** แล้วนำเข้า CSV/XLSX ของคุณเอง หรือดาวน์โหลดไฟล์ตัวอย่างแล้วอัปโหลดผ่านหน้า Data.
+Forecast คำนวณจากไฟล์จริง, Review และ Monitoring บันทึกใน IndexedDB ของเบราว์เซอร์นี้.
+ไม่ต้องใช้รหัสผ่าน ไม่มีพื้นที่ทีมร่วมกัน และไม่เชื่อม PostgreSQL บน GitHub Pages.
+
 หาก Docker engine เปิดไม่ได้ ใช้ `setup-local.cmd` แล้ว `start-local.cmd`
 เพื่อเปิดระบบเต็มกับ PostgreSQL แบบ Local; ปิดด้วย `stop-local.cmd`.
 
@@ -29,15 +34,15 @@ Frontend Workflow ของ AI Demand Forecasting Platform
 
 - Dashboard: KPI, Actual vs Forecast, Product ranking, Region contribution และ Recent alerts
 - Data onboarding: Upload CSV/Excel, Preview, Column mapping และ Data quality score
-- Forecast workspace: ตั้งค่า Product/Region/Period/External signals, จำลอง Run Forecast และ Forecast result
-- Explainable AI: Confidence, ปัจจัยที่เกี่ยวข้อง และ Human review decision support
+- Forecast workspace: เลือก Product/Region และ 7–180 วัน คำนวณจากยอดขายที่นำเข้า และเก็บประวัติผลลัพธ์
+- Model evaluation: Validation MAE, Holdout WAPE, ช่วงความไม่แน่นอน และ Human review decision support
 - Products: Product portfolio, Inventory health, Demand by region และ Product detail
 - Alerts: High/Medium/Low priority, Alert detail และ Mark as reviewed
 - Monitoring: Actual vs Forecast performance, Model health และ Re-forecast loop
 - Login / Register / Settings: สมัครสมาชิกและเข้าสู่ระบบจริงผ่าน REST API รวมถึงเปลี่ยนรหัสผ่านและ Logout
 
 Full-stack mode ใช้ข้อมูลและผล Forecast ที่บันทึกใน DB ของ Workspace.
-โหมด `-Mode demo` และ GitHub Pages ยังคงเป็น static frontend demo สำหรับดูหน้าจอเดิม.
+โหมด `-Mode demo` และ GitHub Pages ใช้หน้าจอเดียวกันกับระบบเต็ม และทดลอง workflow ผ่าน browser storage.
 
 ## Full-stack ด้วย FastAPI และ Docker Compose
 
@@ -59,7 +64,7 @@ setup.cmd -Mode demo
 start-web.cmd -Mode demo
 ```
 
-Demo mode ใช้ Login/Register จำลองและไม่ต้องใช้ API/PostgreSQL
+Demo mode มีปุ่มเข้าใช้งานโดยไม่ต้องกรอกรหัสผ่าน และไม่ต้องใช้ API/PostgreSQL
 เก็บหน้าต่าง CMD ของ Demo ไว้ และกด `Ctrl+C` เพื่อปิด
 โหมด Full-stack เปิด services เบื้องหลัง ปิดหน้าต่าง CMD แล้วเว็บยังทำงาน
 ใช้ `-NoBrowser` เพื่อไม่เปิด browser และ `-NoPause` เมื่อต้องการรันจาก terminal/script
@@ -117,7 +122,7 @@ python indexing-lab/benchmark.py --runs 5
 
 ดู [คู่มือทดลองและนำ index ไปใช้ในฐานเดิม](indexing-lab/README.md)
 และ [แบบรายงานสำหรับนิสิต](indexing-lab/REPORT-TEMPLATE.md)
-Frontend Forecast/Upload ยังเป็น demo; API ยอดขายใหม่นี้ทำงานกับฐานข้อมูลจริง
+Frontend ในระบบเต็มนำเข้าและพยากรณ์ผ่าน API/ฐานข้อมูลจริง; GitHub Pages ประมวลผลในเบราว์เซอร์.
 
 มี [Dataset จำลอง 5 สถานการณ์](datasets/README.md) รวม 273,000 แถว
 สำหรับทดลองยอดขายคงที่, growth, seasonality, demand spike และข้อมูลใหญ่ที่กระจายไม่เท่ากัน

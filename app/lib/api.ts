@@ -78,12 +78,22 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
 
 export const isStaticDemo = DEMO_MODE;
 export async function workspaceRequest<T>(token: string, workspaceId: number | null, path: string, body?: unknown, method?: string, signal?: AbortSignal): Promise<T> {
+  if (DEMO_MODE) {
+    const { browserDemo } = await import("./browser-demo");
+    return browserDemo.request<T>(path, body, method, signal);
+  }
   return request<T>(`/workspace${path}`, { token, method: method || (body === undefined ? "GET" : "POST"),
     body: body === undefined ? undefined : JSON.stringify(body), signal,
     headers: workspaceId ? { "X-Workspace-ID": String(workspaceId) } : {} });
 }
 
 export async function downloadForecast(token: string, workspaceId: number, runId: number) {
+  if (DEMO_MODE) {
+    const csv = await workspaceRequest<string>(token, workspaceId, `/forecasts/${runId}/export`);
+    const url = URL.createObjectURL(new Blob(["\ufeff", csv], { type: "text/csv;charset=utf-8" }));
+    const link = document.createElement("a"); link.href = url; link.download = `forecast-${runId}.csv`; link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000); return;
+  }
   const response = await fetch(`${API_BASE_URL}/workspace/forecasts/${runId}/export`, {
     headers: { Authorization: `Bearer ${token}`, "X-Workspace-ID": String(workspaceId) },
   });
@@ -124,7 +134,7 @@ export async function getMe(token: string) {
 }
 
 export async function changePassword(token: string, payload: { current_password: string; new_password: string }) {
-  if (DEMO_MODE) return { message: "เปลี่ยนรหัสผ่านในโหมด Demo แล้ว" };
+  if (DEMO_MODE) throw new Error("Demo ไม่ใช้รหัสผ่าน ใช้ระบบเต็มเพื่อจัดการบัญชี");
   return request<{ message: string }>("/change-password", { method: "POST", token, body: JSON.stringify(payload) });
 }
 

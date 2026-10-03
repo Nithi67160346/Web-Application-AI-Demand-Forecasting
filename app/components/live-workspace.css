@@ -2,3 +2,8 @@
 @media(max-width:480px){.live-panel{padding:17px}.live-workspace .mapping-row{grid-template-columns:90px 18px 1fr}.live-workspace .region-bar-row{grid-template-columns:76px 1fr 85px}.live-workspace .kpi-value{font-size:22px}.live-workspace .region-donut .donut-center strong{font-size:17px}.live-workspace .forecast-result .result-kpi-card>strong{font-size:20px}}
 .live-workspace-switcher .workspace-copy select{max-width:100%;width:100%;border:0;background:transparent;color:#fff;font-size:11px;font-weight:700;outline:0}.live-workspace-switcher .workspace-copy option{color:var(--ink);background:white}.live-workspace-switcher .workspace-avatar{font-size:10px}
 .chart-bar-pair{gap:3px}.chart-bar-pair .chart-bar{width:40%;max-width:22px}
+.live-demo-banner {display:flex;align-items:center;justify-content:space-between;gap:16px;padding-bottom:0!important;}
+.live-demo-banner>div:first-child {border-left:3px solid #0e9f91;padding-left:12px;}
+.live-demo-banner p {font-size:12px;color:#64748b;margin:5px 0;}
+.live-demo-actions {display:flex;gap:8px;flex-wrap:wrap;}
+@media (max-width:900px) {.live-demo-banner {flex-direction:column;align-items:stretch;}}
