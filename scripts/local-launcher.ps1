@@ -54,6 +54,31 @@ function Setup {
     }
     Write-Host 'Local setup complete. Run start-local.cmd.' -ForegroundColor Green
 }
+function PostgresRunning {
+    $pidFile=Join-Path $data 'postmaster.pid'
+    if(!(Test-Path $pidFile)){return $false}
+    $snapshot=[IO.File]::ReadAllText($pidFile)
+    $postgresProcessId=0
+    if(![int]::TryParse(($snapshot -split '\r?\n')[0],[ref]$postgresProcessId) -or $postgresProcessId -le 0){
+        throw 'Invalid PostgreSQL PID file. Inspect .cache/local-db/postmaster.pid before restarting.'
+    }
+    # Query failures must not be mistaken for an absent process.
+    $process=Get-CimInstance Win32_Process -Filter "ProcessId=$postgresProcessId" -ErrorAction Stop
+    if(!$process){
+        # Recheck before removing only the stale lock file, never database contents.
+        if((Test-Path $pidFile) -and [IO.File]::ReadAllText($pidFile) -eq $snapshot -and !(Get-CimInstance Win32_Process -Filter "ProcessId=$postgresProcessId" -ErrorAction Stop)){
+            Remove-Item -LiteralPath $pidFile
+            Write-Host 'Removed a stale PostgreSQL PID file; database files are kept.'
+        }
+        if(Test-Path $pidFile){throw 'PostgreSQL state changed while checking it. Run the launcher again.'}
+        return $false
+    }
+    $normalizedCommand=([string]$process.CommandLine).Replace('/','\')
+    if($process.Name -ne 'postgres.exe' -or !$normalizedCommand.Contains($data)){
+        throw 'The PostgreSQL PID belongs to another process. No stop signal was sent.'
+    }
+    return $true
+}
 function StopServices {
     if(Test-Path $stateFile){
         $state=Get-Content $stateFile -Raw|ConvertFrom-Json
@@ -70,9 +95,11 @@ function StopServices {
             }
         }
     }
-    if(Test-Path (Join-Path $data 'postmaster.pid')){
-        Checked (Join-Path $pgBin 'pg_ctl.exe') @('-D',$data,'stop','-m','fast','-w')
+    if(PostgresRunning){
+        & (Join-Path $pgBin 'pg_ctl.exe') -D $data stop -m fast -w
+        if($LASTEXITCODE -ne 0 -and (PostgresRunning)){throw "PostgreSQL stop failed (exit $LASTEXITCODE)."}
     }
+    if(Test-Path $stateFile){Remove-Item -LiteralPath $stateFile}
     Write-Host 'Local services stopped. Database files are kept.' -ForegroundColor Green
 }
 
@@ -99,7 +126,7 @@ try{
             New-Item -ItemType Directory -Force -Path $data|Out-Null
             Checked (Join-Path $pgBin 'initdb.exe') @('-D',$data,'-U','postgres','--encoding=UTF8','--locale=C','--auth=trust')
         }
-        if(Test-Path (Join-Path $data 'postmaster.pid')){
+        if(PostgresRunning){
             $dbPort=[int]((Get-Content (Join-Path $data 'postmaster.pid'))[3])
             Checked (Join-Path $pgBin 'pg_ctl.exe') @('-D',$data,'status')
         }else{
