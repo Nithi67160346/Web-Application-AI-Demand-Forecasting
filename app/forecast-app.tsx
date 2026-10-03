@@ -3,6 +3,8 @@
 import { useEffect, useMemo, useState } from "react";
 import type { ChangeEvent, DragEvent, FormEvent } from "react";
 import { ForecastChart } from "./components/ForecastChart";
+import { OperationalWorkspace } from "./components/OperationalWorkspace";
+import { isStaticDemo } from "./lib/api";
 import {
   changePassword as apiChangePassword,
   checkUsername,
@@ -1020,6 +1022,12 @@ export function ForecastApp({ initialView, initialPath }: ForecastAppProps) {
   async function handleChangePassword(payload: { current_password: string; new_password: string }) {
     if (!authToken) throw new Error("กรุณาเข้าสู่ระบบใหม่อีกครั้ง");
     await apiChangePassword(authToken, payload);
+    if (!isStaticDemo) {
+      window.localStorage.removeItem("demandly_access_token");
+      setAuthToken(null);
+      setAuthUser(null);
+      navigate("/login");
+    }
     setToast("เปลี่ยนรหัสผ่านสำเร็จ");
   }
 
@@ -1028,6 +1036,10 @@ export function ForecastApp({ initialView, initialPath }: ForecastAppProps) {
   if (view === "login") return <LoginView onLogin={handleLogin} onRegister={() => { setAuthError(""); navigate("/register"); }} isLoading={authLoading} error={authError} />;
   if (view === "register") return <RegisterView onRegister={handleRegister} onLogin={() => { setAuthError(""); navigate("/login"); }} isLoading={authLoading} error={authError} />;
   if (!authUser) return <LoginView onLogin={handleLogin} onRegister={() => { setAuthError(""); navigate("/register"); }} isLoading={authLoading} error={authError} />;
+
+  if (!isStaticDemo && authUser && authToken) {
+    return <OperationalWorkspace token={authToken} user={authUser} view={view} onNavigate={navigate} onLogout={handleLogout} onChangePassword={handleChangePassword} />;
+  }
 
   const selectedProduct = getProduct(selectedProductId);
   const selectedAlert = getAlert(selectedAlertId);

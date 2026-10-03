@@ -1,5 +1,6 @@
 from datetime import datetime, timedelta, timezone
 from uuid import uuid4
+from hashlib import sha256
 
 import jwt
 from pwdlib import PasswordHash
@@ -18,7 +19,7 @@ def verify_password(password: str, hashed_password: str) -> bool:
     return password_hash.verify(password, hashed_password)
 
 
-def create_access_token(user_id: int, username: str) -> tuple[str, str, datetime]:
+def create_access_token(user_id: int, username: str, password_hash_value: str) -> tuple[str, str, datetime]:
     settings = get_settings()
     expires_at = datetime.now(timezone.utc) + timedelta(minutes=settings.access_token_expire_minutes)
     jti = uuid4().hex
@@ -27,6 +28,7 @@ def create_access_token(user_id: int, username: str) -> tuple[str, str, datetime
         "username": username,
         "jti": jti,
         "type": "access",
+        "password_version": sha256(password_hash_value.encode()).hexdigest(),
         "iat": datetime.now(timezone.utc),
         "exp": expires_at,
     }

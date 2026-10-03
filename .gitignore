@@ -32,10 +32,13 @@ yarn-error.log*
 .env*
 !.env.example
 !api/.env.example
+!deploy/.env.production.example
 __pycache__/
 *.py[cod]
 .venv/
 .cache/
+*.tsbuildinfo
+/backups/
 indexing-lab/results/
 
 # vercel

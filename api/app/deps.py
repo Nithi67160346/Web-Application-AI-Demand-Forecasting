@@ -1,4 +1,6 @@
 from typing import Any
+from hashlib import sha256
+from hmac import compare_digest
 
 import jwt
 from fastapi import Depends, HTTPException, status
@@ -46,6 +48,8 @@ def get_current_auth(
         raise unauthorized from exc
     if user is None or not user.is_active:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User is inactive or no longer exists")
+    if not compare_digest(str(payload.get('password_version', '')), sha256(user.hashed_password.encode()).hexdigest()):
+        raise unauthorized
     return user, payload
 
 

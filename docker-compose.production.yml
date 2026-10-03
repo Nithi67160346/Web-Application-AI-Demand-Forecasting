@@ -1,0 +1,67 @@
+# Immutable builds; one loopback gateway; no public DB/Adminer ports or dev bind mounts.
+name: demandly-production
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: demandly
+      POSTGRES_DB: demandly
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+    volumes:
+      - production_database:/var/lib/postgresql/data
+    healthcheck:
+      test: [CMD-SHELL, 'pg_isready -h 127.0.0.1 -U demandly -d demandly']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+  api:
+    build: ./api
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: ${PRODUCTION_DATABASE_URL:?Set URL with URL-encoded password and host db}
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:?Set a random JWT secret}
+      CORS_ORIGINS: http://localhost:8088
+      AUTH_RATE_LIMIT: 20
+      DEPLOYMENT_MODE: production
+      # API has no published host port; only the trusted gateway reaches it.
+      FORWARDED_ALLOW_IPS: '*'
+    volumes:
+      - ./datasets:/datasets:ro
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile.web
+      args:
+        VITE_API_BASE_URL: /api
+    restart: unless-stopped
+    healthcheck:
+      test: [CMD, node, -e, "fetch('http://127.0.0.1:3000/').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 5s
+      timeout: 10s
+      retries: 30
+    depends_on:
+      api:
+        condition: service_healthy
+  gateway:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - '127.0.0.1:8088:8080'
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+    depends_on:
+      web:
+        condition: service_healthy
+      api:
+        condition: service_healthy
+volumes:
+  production_database:

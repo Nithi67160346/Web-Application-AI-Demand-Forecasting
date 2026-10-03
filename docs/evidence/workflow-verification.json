@@ -1,0 +1,91 @@
+{
+  "api": "http://localhost:8002",
+  "database": "PostgreSQL",
+  "results": [
+    {
+      "dataset": "stable",
+      "rows": 18250,
+      "total_quantity": 6225582,
+      "duplicates": 0,
+      "model": "weekday_mean",
+      "holdout": {
+        "mae": 9.17,
+        "wape_percent": 5.022,
+        "bias": -1.518
+      },
+      "forecast_total": 5447.33,
+      "query_ms": 3.584,
+      "plan_available": true,
+      "alerts_created": 0,
+      "elapsed_seconds": 17.3
+    },
+    {
+      "dataset": "growth",
+      "rows": 18250,
+      "total_quantity": 9021329,
+      "duplicates": 0,
+      "model": "linear_trend",
+      "holdout": {
+        "mae": 19.679,
+        "wape_percent": 5.844,
+        "bias": -8.927
+      },
+      "forecast_total": 10363.8,
+      "query_ms": 2.585,
+      "plan_available": true,
+      "alerts_created": 0,
+      "elapsed_seconds": 17.19
+    },
+    {
+      "dataset": "seasonal",
+      "rows": 18250,
+      "total_quantity": 6226594,
+      "duplicates": 0,
+      "model": "annual_seasonal",
+      "holdout": {
+        "mae": 13.213,
+        "wape_percent": 6.128,
+        "bias": 4.827
+      },
+      "forecast_total": 5270.61,
+      "query_ms": 0.621,
+      "plan_available": true,
+      "alerts_created": 1,
+      "elapsed_seconds": 21.37
+    },
+    {
+      "dataset": "spike",
+      "rows": 18250,
+      "total_quantity": 6324199,
+      "duplicates": 0,
+      "model": "last_value",
+      "holdout": {
+        "mae": 8.464,
+        "wape_percent": 4.768,
+        "bias": 1.464
+      },
+      "forecast_total": 5340.0,
+      "query_ms": 4.772,
+      "plan_available": true,
+      "alerts_created": 0,
+      "elapsed_seconds": 17.23
+    },
+    {
+      "dataset": "large",
+      "rows": 200000,
+      "total_quantity": 2818156,
+      "duplicates": 4072,
+      "model": "last_value",
+      "holdout": {
+        "mae": 162.821,
+        "wape_percent": 5.017,
+        "bias": -37.464
+      },
+      "forecast_total": 104970.0,
+      "query_ms": 4.215,
+      "plan_available": true,
+      "alerts_created": 1,
+      "elapsed_seconds": 31.48
+    }
+  ]
+}

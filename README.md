@@ -1,4 +1,12 @@
-## Project Progress: 60%
+## Operational mock-data workflow
+
+ระบบ Full-stack เชื่อม Upload → Validation → PostgreSQL → Forecast → Alerts/Review → Monitoring จริงแล้ว
+ใช้ dataset จำลองทั้ง 5 ชุด; โมเดลเป็น statistical forecasting และ external signals/ERP เป็น mock.
+ดู [คู่มือใช้งาน](docs/USER-GUIDE.md), [ดูแลระบบ/backup/deployment](docs/OPERATIONS.md)
+และ [ผลทดสอบระบบ](docs/VALIDATION.md).
+
+หาก Docker engine เปิดไม่ได้ ใช้ `setup-local.cmd` แล้ว `start-local.cmd`
+เพื่อเปิดระบบเต็มกับ PostgreSQL แบบ Local; ปิดด้วย `stop-local.cmd`.
 
 # Demandly — AI Demand Forecasting Platform
 
@@ -28,8 +36,8 @@ Frontend Workflow ของ AI Demand Forecasting Platform
 - Monitoring: Actual vs Forecast performance, Model health และ Re-forecast loop
 - Login / Register / Settings: สมัครสมาชิกและเข้าสู่ระบบจริงผ่าน REST API รวมถึงเปลี่ยนรหัสผ่านและ Logout
 
-ข้อมูล Forecast ในหน้านี้ยังเป็น demo data เพื่อให้ทดลอง journey ได้ทันที ส่วน
-Authentication และ User Management เชื่อมกับ FastAPI REST API แล้ว
+Full-stack mode ใช้ข้อมูลและผล Forecast ที่บันทึกใน DB ของ Workspace.
+โหมด `-Mode demo` และ GitHub Pages ยังคงเป็น static frontend demo สำหรับดูหน้าจอเดิม.
 
 ## Full-stack ด้วย FastAPI และ Docker Compose
 

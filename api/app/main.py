@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from .config import get_settings
 from .database import Base, engine, get_db
-from .deps import get_current_auth
+from .deps import get_current_auth, require_admin
 from .models import RevokedToken, User
 from .schemas import (
     ChangePasswordRequest,
@@ -24,6 +24,9 @@ from .schemas import (
 )
 from .security import create_access_token, hash_password, verify_password
 from .sales import router as sales_router
+from .workflow import router as workflow_router
+from .workflow_models import Workspace
+from .middleware import RequestGuard
 
 
 settings = get_settings()
@@ -31,7 +34,8 @@ settings = get_settings()
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    Base.metadata.create_all(bind=engine)
+    if engine.dialect.name == 'sqlite':
+        Base.metadata.create_all(bind=engine)
     yield
 
 
@@ -41,6 +45,7 @@ app = FastAPI(
     description="Authentication, user management and indexed sales history API for the Demandly project.",
     lifespan=lifespan,
 )
+app.add_middleware(RequestGuard, auth_limit=settings.auth_rate_limit)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origin_list,
@@ -49,6 +54,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 app.include_router(sales_router)
+app.include_router(workflow_router)
 
 
 def normalized_email(email: str | None) -> str | None:
@@ -60,7 +66,8 @@ def public_user(user: User) -> UserResponse:
 
 
 @app.get("/health", tags=["System"])
-def health_check() -> dict[str, str]:
+def health_check(db: Session = Depends(get_db)) -> dict[str, str]:
+    db.execute(select(1))
     return {"status": "ok", "service": "demandly-api"}
 
 
@@ -91,7 +98,7 @@ def register(payload: UserCreate, db: Session = Depends(get_db)) -> TokenRespons
         db.rollback()
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Username or email is already registered") from exc
     db.refresh(user)
-    token, _, expires_at = create_access_token(user.id, user.username)
+    token, _, expires_at = create_access_token(user.id, user.username, user.hashed_password)
     expires_in = max(0, int((expires_at - datetime.now(timezone.utc)).total_seconds()))
     return TokenResponse(access_token=token, expires_in=expires_in, user=public_user(user))
 
@@ -104,7 +111,7 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)) -> TokenResponse
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Username/email or password is incorrect")
     if not user.is_active:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="User account is inactive")
-    token, _, expires_at = create_access_token(user.id, user.username)
+    token, _, expires_at = create_access_token(user.id, user.username, user.hashed_password)
     expires_in = max(0, int((expires_at - datetime.now(timezone.utc)).total_seconds()))
     return TokenResponse(access_token=token, expires_in=expires_in, user=public_user(user))
 
@@ -154,7 +161,7 @@ def check_username(name: str, db: Session = Depends(get_db)) -> UsernameCheckRes
 def list_users(
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=20, ge=1, le=100),
-    _: tuple[User, dict] = Depends(get_current_auth),
+    _: User = Depends(require_admin),
     db: Session = Depends(get_db),
 ) -> UsersPage:
     total = db.scalar(select(func.count()).select_from(User)) or 0
@@ -163,7 +170,9 @@ def list_users(
 
 
 @app.get("/users/{user_id}", response_model=UserResponse, tags=["User management"])
-def get_user(user_id: int, _: tuple[User, dict] = Depends(get_current_auth), db: Session = Depends(get_db)) -> UserResponse:
+def get_user(user_id: int, current_auth: tuple[User, dict] = Depends(get_current_auth), db: Session = Depends(get_db)) -> UserResponse:
+    if current_auth[0].id != user_id and current_auth[0].role != 'admin':
+        raise HTTPException(status_code=403, detail='You can only read your own profile')
     user = db.get(User, user_id)
     if user is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
@@ -211,9 +220,15 @@ def delete_user(
     current_user, _ = current_auth
     if current_user.id != user_id and current_user.role != "admin":
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin permission required to delete another user")
+    if db.scalar(select(Workspace.id).where(Workspace.owner_id == user_id)) is not None:
+        raise HTTPException(status_code=409, detail='This account owns a workspace. Disable the account instead to preserve its data and audit history.')
     target = db.get(User, user_id)
     if target is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
     db.delete(target)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(status_code=409, detail='Account is referenced by historical records. Disable it to preserve the audit history.') from exc
     return MessageResponse(message="User deleted successfully")

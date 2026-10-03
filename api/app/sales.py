@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from .database import get_db
 from .deps import get_current_auth
 from .models import SalesRecord, User
+from .workflow_models import Workspace
 
 router = APIRouter(prefix="/sales", tags=["Sales history"])
 
@@ -74,7 +75,10 @@ def import_sales(
     db: Session = Depends(get_db),
 ) -> dict[str, int]:
     user, _ = current_auth
+    workspace = db.scalar(select(Workspace).where(Workspace.owner_id == user.id).with_for_update())
     db.execute(insert(SalesRecord), [item.model_dump() | {"user_id": user.id} for item in payload.items])
+    if workspace:
+        workspace.data_version += 1
     db.commit()
     return {"inserted": len(payload.items)}
 

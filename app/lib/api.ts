@@ -75,6 +75,23 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
   return body as T;
 }
 
+export const isStaticDemo = DEMO_MODE;
+export async function workspaceRequest<T>(token: string, workspaceId: number | null, path: string, body?: unknown, method?: string, signal?: AbortSignal): Promise<T> {
+  return request<T>(`/workspace${path}`, { token, method: method || (body === undefined ? "GET" : "POST"),
+    body: body === undefined ? undefined : JSON.stringify(body), signal,
+    headers: workspaceId ? { "X-Workspace-ID": String(workspaceId) } : {} });
+}
+
+export async function downloadForecast(token: string, workspaceId: number, runId: number) {
+  const response = await fetch(`${API_BASE_URL}/workspace/forecasts/${runId}/export`, {
+    headers: { Authorization: `Bearer ${token}`, "X-Workspace-ID": String(workspaceId) },
+  });
+  if (!response.ok) throw new Error("Cannot export forecast.");
+  const url = URL.createObjectURL(await response.blob());
+  const link = document.createElement("a"); link.href = url; link.download = `forecast-${runId}.csv`; link.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
 export async function register(payload: { username: string; email: string; password: string; full_name: string }) {
   if (DEMO_MODE) {
     const user = createDemoUser({ username: payload.username, email: payload.email, full_name: payload.full_name });
