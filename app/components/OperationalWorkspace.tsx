@@ -66,8 +66,8 @@ function Result({run, exportRun}: {run: Run; exportRun: () => void}) {
   </section>;
 }
 
-export function OperationalWorkspace({token,user,view,onNavigate,onLogout,onChangePassword}: {
-  token:string; user:AuthUser; view:AppView; onNavigate:(path:string)=>void; onLogout:()=>void; onChangePassword:(values:{current_password:string;new_password:string})=>Promise<void>;
+export function OperationalWorkspace({token,user,view,onNavigate,onLogout,onChangePassword,embedded=false}: {
+  embedded?:boolean; token:string; user:AuthUser; view:AppView; onNavigate:(path:string)=>void; onLogout:()=>void; onChangePassword:(values:{current_password:string;new_password:string})=>Promise<void>;
 }) {
   const [workspaceId,setWorkspaceId]=useState<number|null>(null);
   const [info,setInfo]=useState<Workspace|null>(null);
@@ -165,9 +165,9 @@ export function OperationalWorkspace({token,user,view,onNavigate,onLogout,onChan
   async function saveSettings(event:FormEvent) {event.preventDefault();await action(async()=>{await rpc("/settings",{name:workspaceName,auto_refresh:refreshEnabled,compact_table:compact,alert_threshold_percent:threshold},"PUT");setNotice("บันทึกการตั้งค่าลงฐานข้อมูลแล้ว");setReload(v=>v+1);});}
   async function saveMember(event:FormEvent) {event.preventDefault();await action(async()=>{await rpc("/members",{username:memberName,role:memberRole},"PUT");setMemberName("");setNotice("บันทึกสมาชิกแล้ว");setReload(v=>v+1);});}
 
-  return <div className={`op-app ${compact?"op-compact":""}`}>
-    <aside className="op-sidebar"><a className="op-brand" href="/dashboard" onClick={e=>{e.preventDefault();onNavigate("/dashboard");}}>Demandly<span>Mock Data Workspace</span></a><nav>{menu.map(item=><button key={item.view} className={view===item.view?"active":""} onClick={()=>onNavigate(item.path)}>{item.name}</button>)}</nav><div className="op-user"><strong>{user.full_name||user.username}</strong><small>{info?.role||"กำลังโหลดสิทธิ์"}</small><button onClick={onLogout} disabled={busy}>ออกจากระบบ</button></div></aside>
-    <main className="op-main"><header className="op-header"><div><small>ข้อมูลจำลอง · ประมวลผลและบันทึกจริง</small><h1>{menu.find(item=>item.view===view)?.name||"Workspace"}</h1></div><div className="op-row"><select aria-label="เลือก workspace" value={info?.id??""} onChange={e=>switchWorkspace(e.target.value)} disabled={busy||loading}>{info?.workspaces.map(w=><option key={w.id} value={w.id}>{w.name}</option>)}</select><button onClick={()=>setReload(v=>v+1)} disabled={busy||loading}>รีเฟรช</button></div></header>
+  return <div className={`op-app ${embedded?"op-embedded page-content":""} ${compact?"op-compact":""}`}>
+    {!embedded&&<aside className="op-sidebar"><a className="op-brand" href="/dashboard" onClick={e=>{e.preventDefault();onNavigate("/dashboard");}}>Demandly<span>Mock Data Workspace</span></a><nav>{menu.map(item=><button key={item.view} className={view===item.view?"active":""} onClick={()=>onNavigate(item.path)}>{item.name}</button>)}</nav><div className="op-user"><strong>{user.full_name||user.username}</strong><small>{info?.role||"กำลังโหลดสิทธิ์"}</small><button onClick={onLogout} disabled={busy}>ออกจากระบบ</button></div></aside>}
+    <main className="op-main"><header className="op-header"><div><small>ข้อมูลจำลอง · ประมวลผลและบันทึกจริง</small>{!embedded&&<h1>{menu.find(item=>item.view===view)?.name||"Workspace"}</h1>}</div><div className="op-row"><select aria-label="เลือก workspace" value={info?.id??""} onChange={e=>switchWorkspace(e.target.value)} disabled={busy||loading}>{info?.workspaces.map(w=><option key={w.id} value={w.id}>{w.name}</option>)}</select><button onClick={()=>setReload(v=>v+1)} disabled={busy||loading}>รีเฟรช</button></div></header>
       <p className="op-source">ชุดข้อมูลและ disease/policy/population เป็น mock · Forecast เป็นโมเดลสถิติที่คำนวณจากข้อมูลที่นำเข้า · ยังไม่ใช่การพิสูจน์ความแม่นยำกับธุรกิจจริง</p>
       {error&&<div className="op-error" role="alert">{error}<button onClick={()=>setReload(v=>v+1)}>ลองใหม่</button></div>}{notice&&<div className="op-notice" role="status">{notice}</div>}{busy&&<div className="op-notice" role="status">กำลังประมวลผล กรุณารอจนเสร็จ ไม่ต้องกดซ้ำ</div>}
       {loading?<section className="op-card" role="status">กำลังโหลดข้อมูลจากฐานข้อมูล...</section>:<>

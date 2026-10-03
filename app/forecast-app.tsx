@@ -860,6 +860,8 @@ export function ForecastApp({ initialView, initialPath }: ForecastAppProps) {
   const [view, setView] = useState<AppView>(initialView);
   const [currentPath, setCurrentPath] = useState(initialPath ?? pathForView(initialView));
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [showDatabaseTools, setShowDatabaseTools] = useState(false);
+  const [toolsRefresh, setToolsRefresh] = useState(0);
   const [toast, setToast] = useState("");
   const [dashboardLoading, setDashboardLoading] = useState(false);
   const [selectedProductId, setSelectedProductId] = useState(currentPath.split("/")[2] || "test-kit-a");
@@ -947,6 +949,10 @@ export function ForecastApp({ initialView, initialPath }: ForecastAppProps) {
   }
 
   function refreshDashboard() {
+    if (showDatabaseTools) {
+      setToolsRefresh(value => value + 1);
+      return;
+    }
     setDashboardLoading(true);
     window.setTimeout(() => { setDashboardLoading(false); setToast("อัปเดตข้อมูลล่าสุดเรียบร้อยแล้ว"); }, 700);
   }
@@ -1037,13 +1043,9 @@ export function ForecastApp({ initialView, initialPath }: ForecastAppProps) {
   if (view === "register") return <RegisterView onRegister={handleRegister} onLogin={() => { setAuthError(""); navigate("/login"); }} isLoading={authLoading} error={authError} />;
   if (!authUser) return <LoginView onLogin={handleLogin} onRegister={() => { setAuthError(""); navigate("/register"); }} isLoading={authLoading} error={authError} />;
 
-  if (!isStaticDemo && authUser && authToken) {
-    return <OperationalWorkspace token={authToken} user={authUser} view={view} onNavigate={navigate} onLogout={handleLogout} onChangePassword={handleChangePassword} />;
-  }
-
   const selectedProduct = getProduct(selectedProductId);
   const selectedAlert = getAlert(selectedAlertId);
   const meta = pageMeta[view];
 
-  return <div className="app-shell"><Sidebar activeView={view} isOpen={sidebarOpen} onNavigate={navigate} onClose={() => setSidebarOpen(false)} user={authUser} /><div className="app-main"><Topbar title={meta.title} eyebrow={meta.eyebrow} onMenu={() => setSidebarOpen(true)} onNavigate={navigate} onRefresh={refreshDashboard} userLabel={accountDisplayName(authUser)} /><main className="content-scroll">{view === "dashboard" && <DashboardView loading={dashboardLoading} userName={accountDisplayName(authUser)} onNavigate={navigate} onRefresh={refreshDashboard} />}{view === "forecast" && <ForecastView stage={forecastStage} statusIndex={forecastStatusIndex} productId={forecastProductId} region={forecastRegion} period={forecastPeriod} signals={forecastSignals} onProductChange={setForecastProductId} onRegionChange={setForecastRegion} onPeriodChange={setForecastPeriod} onToggleSignal={toggleSignal} onRun={runForecast} onNavigate={navigate} onReset={() => setForecastStage("setup")} />}{view === "data" && <DataView step={dataStep} fileName={fileName} onFile={chooseFile} onStep={setDataStep} onNavigate={navigate} />}{view === "products" && (currentPath.startsWith("/products/") ? <ProductDetailView product={selectedProduct} onNavigate={navigate} /> : <ProductsView query={productQuery} onQuery={setProductQuery} onNavigate={navigate} />)}{view === "alerts" && (currentPath.startsWith("/alerts/") ? <AlertDetailView alert={selectedAlert} isReviewed={reviewedAlerts.includes(selectedAlert.id)} onReview={() => markAlertReviewed(selectedAlert.id)} onNavigate={navigate} /> : <AlertsView filter={alertFilter} onFilter={setAlertFilter} onNavigate={navigate} reviewed={reviewedAlerts} />)}{view === "monitoring" && <MonitoringView onNavigate={navigate} />}{view === "settings" && <SettingsView onNavigate={navigate} onLogout={handleLogout} onChangePassword={handleChangePassword} />}</main></div><Toast message={toast} onClose={() => setToast("")} /></div>;
+  return <div className="app-shell"><Sidebar activeView={view} isOpen={sidebarOpen} onNavigate={navigate} onClose={() => setSidebarOpen(false)} user={authUser} /><div className="app-main"><Topbar title={meta.title} eyebrow={meta.eyebrow} onMenu={() => setSidebarOpen(true)} onNavigate={navigate} onRefresh={refreshDashboard} userLabel={accountDisplayName(authUser)} /><main className="content-scroll">{!isStaticDemo && authToken && <div className="workspace-mode-bar"><div className="workspace-mode-buttons" role="group" aria-label="เลือกมุมมอง"><button type="button" aria-pressed={!showDatabaseTools} onClick={() => setShowDatabaseTools(false)}>หน้าจอเดิม</button><button type="button" aria-pressed={showDatabaseTools} onClick={() => setShowDatabaseTools(true)}>เครื่องมือฐานข้อมูล</button></div><span>{showDatabaseTools ? "ข้อมูลที่นำเข้าและผลคำนวณจากฐานข้อมูล" : "มุมมองตัวอย่างเดิม · ใช้เครื่องมือฐานข้อมูลเพื่อนำเข้าและคำนวณจริง"}</span></div>}{!isStaticDemo && authToken && showDatabaseTools ? <OperationalWorkspace key={toolsRefresh} embedded token={authToken} user={authUser} view={view} onNavigate={navigate} onLogout={handleLogout} onChangePassword={handleChangePassword} /> : <>{view === "dashboard" && <DashboardView loading={dashboardLoading} userName={accountDisplayName(authUser)} onNavigate={navigate} onRefresh={refreshDashboard} />}{view === "forecast" && <ForecastView stage={forecastStage} statusIndex={forecastStatusIndex} productId={forecastProductId} region={forecastRegion} period={forecastPeriod} signals={forecastSignals} onProductChange={setForecastProductId} onRegionChange={setForecastRegion} onPeriodChange={setForecastPeriod} onToggleSignal={toggleSignal} onRun={runForecast} onNavigate={navigate} onReset={() => setForecastStage("setup")} />}{view === "data" && <DataView step={dataStep} fileName={fileName} onFile={chooseFile} onStep={setDataStep} onNavigate={navigate} />}{view === "products" && (currentPath.startsWith("/products/") ? <ProductDetailView product={selectedProduct} onNavigate={navigate} /> : <ProductsView query={productQuery} onQuery={setProductQuery} onNavigate={navigate} />)}{view === "alerts" && (currentPath.startsWith("/alerts/") ? <AlertDetailView alert={selectedAlert} isReviewed={reviewedAlerts.includes(selectedAlert.id)} onReview={() => markAlertReviewed(selectedAlert.id)} onNavigate={navigate} /> : <AlertsView filter={alertFilter} onFilter={setAlertFilter} onNavigate={navigate} reviewed={reviewedAlerts} />)}{view === "monitoring" && <MonitoringView onNavigate={navigate} />}{view === "settings" && <SettingsView onNavigate={navigate} onLogout={handleLogout} onChangePassword={handleChangePassword} />}</>}</main></div><Toast message={toast} onClose={() => setToast("")} /></div>;
 }
