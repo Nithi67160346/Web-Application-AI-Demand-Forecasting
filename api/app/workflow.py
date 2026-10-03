@@ -32,7 +32,7 @@ def context(workspace_id: int | None = Header(default=None, alias='X-Workspace-I
     if workspace_id is None:
         workspace = db.scalar(select(Workspace).where(Workspace.owner_id == user.id))
         if workspace is None:
-            workspace = Workspace(owner_id=user.id, name=f'{user.username} · Mock Demand Lab', settings={})
+            workspace = Workspace(owner_id=user.id, name=f'{user.username} · Workspace', settings={})
             db.add(workspace)
             try:
                 db.flush()
@@ -282,10 +282,26 @@ def inventory(ctx=Depends(context)):
     return inventory_snapshots(ctx)
 
 
+@router.get('/products/{product_id}/summary')
+def product_summary(product_id: int, ctx=Depends(context)):
+    product = owned(ProductRecord, product_id, ctx)
+    rows = daily_rows(ctx, product.code)
+    end = rows[-1][0] if rows else None
+    recent = [(day, quantity) for day, quantity in rows if day > end-timedelta(days=30)] if end else []
+    regions = ctx[3].execute(select(SalesRecord.region, func.sum(SalesRecord.sales_quantity))
+        .where(SalesRecord.user_id == ctx[0].owner_id, SalesRecord.product_code == product.code)
+        .group_by(SalesRecord.region).order_by(SalesRecord.region)).all()
+    return {'code': product.code, 'last_date': end, 'recent_sales': sum(q for _, q in recent),
+            'daily_average': sum(q for _, q in recent)/30 if recent else 0,
+            'trend': [{'date': day, 'actual': quantity} for day, quantity in rows[-90:]],
+            'regions': [{'region': region, 'quantity': quantity} for region, quantity in regions],
+            'inventory': inventory_snapshots(ctx, product.code)}
+
+
 class ForecastRequest(BaseModel):
     product_code: str = Field(min_length=1, max_length=64)
     region: str = Field(min_length=1, max_length=64)
-    horizon: int = Field(default=30, ge=7, le=90)
+    horizon: int = Field(default=30, ge=7, le=180)
     signals: list[Literal['disease', 'seasonality', 'policy', 'population']] = Field(default_factory=list, max_length=4)
     acknowledge_missing_days: bool = False
     as_of: date | None = None
@@ -307,12 +323,13 @@ def run_forecast(payload: ForecastRequest, ctx=Depends(context)):
         result = forecast_series(rows, payload.horizon, list(dict.fromkeys(payload.signals)))
     except ValueError as exc:
         raise HTTPException(422, str(exc)) from exc
+    snapshot = next((item for item in inventory_snapshots(ctx, payload.product_code, rows[-1][0]) if item['region'] == payload.region), None)
+    result = result | {'inventory_snapshot': {**snapshot, 'sale_date': snapshot['sale_date'].isoformat()} if snapshot else None}
     run = ForecastRun(workspace_id=workspace.id, created_by=user.id, data_generation=workspace.data_generation, product_code=payload.product_code,
                       region=payload.region, data_version=workspace.data_version, result=result)
     db.add(run)
     db.flush()
     product = db.scalar(select(ProductRecord).where(ProductRecord.workspace_id == workspace.id, ProductRecord.code == payload.product_code))
-    snapshot = next((item for item in inventory_snapshots(ctx, payload.product_code, rows[-1][0]) if item['region'] == payload.region), None)
     threshold = workspace.settings.get('alert_threshold_percent', 15)
     origin = rows[-1][0]
     recent = [q for d, q in rows if d > origin-timedelta(days=7)]
@@ -321,10 +338,10 @@ def run_forecast(payload: ForecastRequest, ctx=Depends(context)):
         observed_change = (sum(recent)/7 / (sum(previous)/28)-1)*100
         if abs(observed_change) >= threshold:
             db.add(AlertRecord(workspace_id=workspace.id, forecast_id=run.id, level='HIGH' if abs(observed_change) >= 30 else 'MEDIUM',
-                               kind='observed_change', message=f'Observed recent 7-day demand changed {observed_change:.1f}% versus prior 28 days at {origin}. Synthetic sales, verify before acting.'))
+                               kind='observed_change', message=f'Observed recent 7-day demand changed {observed_change:.1f}% versus prior 28 days at {origin}.'))
     if result['change_percent'] is not None and abs(result['change_percent']) >= threshold:
         db.add(AlertRecord(workspace_id=workspace.id, forecast_id=run.id, level='HIGH' if abs(result['change_percent']) >= 30 else 'MEDIUM',
-                           kind='demand_change', message=f'{payload.product_code} / {payload.region}: demand change {result["change_percent"]}% (mock scenario).'))
+                           kind='demand_change', message=f'{payload.product_code} / {payload.region}: demand change {result["change_percent"]}%.'))
     if snapshot and product:
         daily_demand = result['total'] / payload.horizon
         needed = daily_demand * product.lead_time_days + product.safety_stock

@@ -70,7 +70,8 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
   const body = await response.json().catch(() => null) as { detail?: string; message?: string } | T | null;
   if (!response.ok) {
     const detail = body && typeof body === "object" && "detail" in body ? body.detail : undefined;
-    throw new Error(detail || `Request failed with status ${response.status}`);
+    const readable = Array.isArray(detail) ? detail.map(item => typeof item === "object" && item !== null ? `${(item as {loc?: string[]}).loc?.slice(1).join(".") || "ข้อมูล"}: ${(item as {msg?: string}).msg || "ไม่ถูกต้อง"}` : String(item)).join("; ") : typeof detail === "string" ? detail : undefined;
+    throw new Error(readable || `Request failed with status ${response.status}`);
   }
   return body as T;
 }

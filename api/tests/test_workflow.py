@@ -82,6 +82,30 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(self.get('/dashboard', self.other).json()['records'], 0)
         self.assertEqual(self.get(f'/imports', self.other | {'X-Workspace-ID': str(self.workspace)}).status_code, 404)
 
+    def test_product_summary_is_tenant_scoped_and_uses_latest_snapshots(self):
+        self.import_file(self.file(duplicate=True), ack=True)
+        product = self.get('/products').json()[0]
+        summary = self.get(f'/products/{product["id"]}/summary')
+        self.assertEqual(summary.status_code, 200)
+        self.assertEqual(summary.json()['recent_sales'], 3000)
+        self.assertEqual(summary.json()['daily_average'], 100)
+        self.assertEqual(summary.json()['inventory'][0]['inventory'], 10)
+        self.assertEqual(len(summary.json()['trend']), 90)
+        self.assertEqual(self.get(f'/products/{product["id"]}/summary', self.other).status_code, 404)
+
+    def test_six_month_forecast_preserves_temporal_cutoff_and_bound(self):
+        self.import_file(self.file(days=200))
+        cutoff = (date(2026, 1, 1)+timedelta(days=139)).isoformat()
+        run = self.post('/forecasts', {'product_code':'TK-A-001','region':'Bangkok','horizon':180,'as_of':cutoff})
+        self.assertEqual(run.status_code, 201, run.text)
+        self.assertEqual(run.json()['origin'], cutoff)
+        self.assertEqual(len(run.json()['points']), 180)
+        self.assertEqual(run.json()['total'], 18000)
+        self.assertEqual(run.json()['inventory_snapshot']['sale_date'], cutoff)
+        persisted = self.get(f'/forecasts/{run.json()["id"]}').json()
+        self.assertEqual(persisted['inventory_snapshot']['inventory'], 10)
+        self.assertEqual(self.post('/forecasts', {'product_code':'TK-A-001','region':'Bangkok','horizon':181}).status_code, 422)
+
     def test_duplicates_require_acknowledgment_and_snapshot_is_not_sum(self):
         payload = self.file(duplicate=True)
         stage = self.post('/imports/validate', payload).json()

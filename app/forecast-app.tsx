@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import type { ChangeEvent, DragEvent, FormEvent } from "react";
 import { ForecastChart } from "./components/ForecastChart";
-import { OperationalWorkspace } from "./components/OperationalWorkspace";
+import { LiveWorkspace, type LiveMeta } from "./components/LiveWorkspace";
 import { isStaticDemo } from "./lib/api";
 import {
   changePassword as apiChangePassword,
@@ -197,12 +197,16 @@ function Sidebar({
   onNavigate,
   onClose,
   user,
+  workspaceMeta,
+  onWorkspaceChange,
 }: {
   activeView: AppView;
   isOpen: boolean;
   onNavigate: (path: string) => void;
   onClose: () => void;
   user: AuthUser | null;
+  workspaceMeta?: LiveMeta | null;
+  onWorkspaceChange?: (id: number) => void;
 }) {
   const displayName = accountDisplayName(user);
   const displayInitial = displayName.charAt(0).toUpperCase();
@@ -218,14 +222,14 @@ function Sidebar({
           </button>
         </div>
 
-        <button className="workspace-switcher" type="button">
+        {!isStaticDemo ? <label className="workspace-switcher live-workspace-switcher"><span className="workspace-avatar">{(workspaceMeta?.workspace.name || "WS").slice(0,2).toUpperCase()}</span><span className="workspace-copy"><select aria-label="เลือกพื้นที่ทำงาน" value={workspaceMeta?.workspace.id ?? ""} onChange={event => onWorkspaceChange?.(Number(event.target.value))}>{workspaceMeta?.workspace.workspaces.map(w => <option key={w.id} value={w.id}>{w.name.replace(/ · Mock Demand Lab$/, " · Workspace")}</option>)}{!workspaceMeta && <option value="">กำลังโหลดพื้นที่ทำงาน</option>}</select><small>{workspaceMeta?.workspace.role || "Workspace"}</small></span></label> : <button className="workspace-switcher" type="button">
           <span className="workspace-avatar">BH</span>
           <span className="workspace-copy">
             <strong>BioHealth Manufacturing</strong>
             <small>Supply chain workspace</small>
           </span>
           <span className="workspace-chevron">⌄</span>
-        </button>
+        </button>}
 
         <nav className="sidebar-nav" aria-label="เมนูหลัก">
           <span className="nav-section-label">WORKSPACE</span>
@@ -241,7 +245,7 @@ function Sidebar({
                 <strong>{item.label}</strong>
                 <small>{item.caption}</small>
               </span>
-              {item.id === "alerts" && <span className="nav-count">3</span>}
+              {item.id === "alerts" && <span className="nav-count">{isStaticDemo ? 3 : workspaceMeta?.pending ?? 0}</span>}
             </button>
           ))}
 
@@ -264,7 +268,7 @@ function Sidebar({
             <span className="help-card-icon"><Icon name="help" /></span>
             <strong>ต้องการความช่วยเหลือ?</strong>
             <span>ดูคู่มือการใช้งาน Forecast</span>
-            <button type="button" onClick={() => window.alert("คู่มือ demo จะพร้อมในเวอร์ชันถัดไป")}>เปิดคู่มือ <Icon name="arrow" /></button>
+            <button type="button" onClick={() => onNavigate("/settings?section=help")}>เปิดคู่มือ <Icon name="arrow" /></button>
           </div>
           <div className="sidebar-user">
             <span className="user-avatar">{displayInitial}</span>
@@ -284,6 +288,7 @@ function Topbar({
   onNavigate,
   onRefresh,
   userLabel,
+  liveAlerts,
 }: {
   title: string;
   eyebrow: string;
@@ -291,13 +296,15 @@ function Topbar({
   onNavigate: (path: string) => void;
   onRefresh: () => void;
   userLabel?: string;
+  liveAlerts?: LiveMeta["alerts"];
 }) {
+  const notifications = isStaticDemo ? alerts : liveAlerts ?? [];
   const [search, setSearch] = useState("");
   const [showNotifications, setShowNotifications] = useState(false);
 
   function submitSearch(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (search.trim()) onNavigate("/products");
+    if (search.trim()) onNavigate(`/products?search=${encodeURIComponent(search.trim())}`);
   }
 
   return (
@@ -315,20 +322,20 @@ function Topbar({
           <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="ค้นหาสินค้า, region..." aria-label="ค้นหา" />
           <kbd>⌘ K</kbd>
         </form>
-        <button className="topbar-date" type="button"><Icon name="calendar" /> 21 มิ.ย. 2025 <span>⌄</span></button>
+        <span className="topbar-date"><Icon name="calendar" /> {new Date().toLocaleDateString("th-TH", {timeZone:"Asia/Bangkok",day:"numeric",month:"short",year:"numeric"})}</span>
         <div className="notification-wrap">
           <button className="icon-button topbar-icon" onClick={() => setShowNotifications((value) => !value)} aria-label="แจ้งเตือน" aria-expanded={showNotifications}>
-            <Icon name="bell" /><span className="notification-dot" />
+            <Icon name="bell" />{notifications.length > 0 && <span className="notification-dot" />}
           </button>
           {showNotifications && (
             <div className="notification-popover">
-              <div className="popover-header"><strong>แจ้งเตือนล่าสุด</strong><span>3 รายการ</span></div>
-              {alerts.slice(0, 2).map((alert) => <button key={alert.id} type="button" onClick={() => onNavigate(`/alerts/${alert.id}`)}><span className={`mini-alert-dot dot-${alert.level.toLowerCase()}`} /><span><strong>{alert.product}</strong><small>{alert.title}</small></span><Icon name="chevron" /></button>)}
+              <div className="popover-header"><strong>แจ้งเตือนล่าสุด</strong><span>{notifications.length} รายการ</span></div>
+              {notifications.slice(0, 2).map((alert) => <button key={alert.id} type="button" onClick={() => onNavigate(`/alerts/${alert.id}`)}><span className={`mini-alert-dot dot-${alert.level.toLowerCase()}`} /><span><strong>{alert.product}</strong><small>{alert.title}</small></span><Icon name="chevron" /></button>)}
               <button className="popover-footer" type="button" onClick={() => onNavigate("/alerts")}>ดูทั้งหมด <Icon name="arrow" /></button>
             </div>
           )}
         </div>
-        <button className="icon-button topbar-icon help-button" aria-label="ช่วยเหลือ"><Icon name="help" /></button>
+        <button className="icon-button topbar-icon help-button" aria-label="ช่วยเหลือ" onClick={() => onNavigate("/settings?section=help")}><Icon name="help" /></button>
         <button className="profile-trigger" onClick={() => onNavigate("/settings")} type="button"><span className="user-avatar">{(userLabel || "ผู้ใช้งาน").charAt(0).toUpperCase()}</span><span>{userLabel || "ผู้ใช้งาน"}</span><span className="profile-chevron">⌄</span></button>
       </div>
       <button className="refresh-button" type="button" onClick={onRefresh} aria-label="รีเฟรชข้อมูล"><Icon name="refresh" /></button>
@@ -678,13 +685,13 @@ function AuthScene({
           <div className="login-signal-card" aria-hidden="true">
             <div className="login-signal-heading">
               <span><i /> DEMAND OUTLOOK</span>
-              <strong>LIVE</strong>
+              <strong>PLAN AHEAD</strong>
             </div>
             <div className="login-signal-content">
               <div className="login-signal-value">
-                <small>Forecast · 30 วัน</small>
-                <strong>12,480</strong>
-                <span><b>↑ 12.8%</b> จากช่วงก่อนหน้า</span>
+                <small>เชื่อมข้อมูลกับการวางแผน</small>
+                <strong>Demand</strong>
+                <span>Sales → Forecast → Decision</span>
               </div>
               <div className="login-signal-chart">
                 <i style={{ height: "30%" }} />
@@ -860,8 +867,9 @@ export function ForecastApp({ initialView, initialPath }: ForecastAppProps) {
   const [view, setView] = useState<AppView>(initialView);
   const [currentPath, setCurrentPath] = useState(initialPath ?? pathForView(initialView));
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [showDatabaseTools, setShowDatabaseTools] = useState(false);
-  const [toolsRefresh, setToolsRefresh] = useState(0);
+  const [liveRefresh, setLiveRefresh] = useState(0);
+  const [liveMeta, setLiveMeta] = useState<LiveMeta | null>(null);
+  const [liveWorkspaceId, setLiveWorkspaceId] = useState<number | null>(null);
   const [toast, setToast] = useState("");
   const [dashboardLoading, setDashboardLoading] = useState(false);
   const [selectedProductId, setSelectedProductId] = useState(currentPath.split("/")[2] || "test-kit-a");
@@ -931,6 +939,8 @@ export function ForecastApp({ initialView, initialPath }: ForecastAppProps) {
         window.localStorage.removeItem("demandly_access_token");
         setAuthToken(null);
         setAuthUser(null);
+      setLiveMeta(null);
+      setLiveWorkspaceId(null);
         setAuthReady(true);
         if (!isPublicPath) navigate("/login");
       });
@@ -949,8 +959,8 @@ export function ForecastApp({ initialView, initialPath }: ForecastAppProps) {
   }
 
   function refreshDashboard() {
-    if (showDatabaseTools) {
-      setToolsRefresh(value => value + 1);
+    if (!isStaticDemo) {
+      setLiveRefresh(value => value + 1);
       return;
     }
     setDashboardLoading(true);
@@ -984,6 +994,8 @@ export function ForecastApp({ initialView, initialPath }: ForecastAppProps) {
       window.localStorage.setItem("demandly_access_token", response.access_token);
       setAuthToken(response.access_token);
       setAuthUser(response.user);
+      setLiveMeta(null);
+      setLiveWorkspaceId(null);
       navigate("/dashboard");
       setToast("เข้าสู่ระบบสำเร็จ");
     } catch (error) {
@@ -1001,6 +1013,8 @@ export function ForecastApp({ initialView, initialPath }: ForecastAppProps) {
       window.localStorage.setItem("demandly_access_token", response.access_token);
       setAuthToken(response.access_token);
       setAuthUser(response.user);
+      setLiveMeta(null);
+      setLiveWorkspaceId(null);
       navigate("/dashboard");
       setToast("สร้างบัญชีสำเร็จ");
     } catch (error) {
@@ -1020,6 +1034,8 @@ export function ForecastApp({ initialView, initialPath }: ForecastAppProps) {
       window.localStorage.removeItem("demandly_access_token");
       setAuthToken(null);
       setAuthUser(null);
+      setLiveMeta(null);
+      setLiveWorkspaceId(null);
       setAuthError("");
       navigate("/login");
     }
@@ -1032,6 +1048,8 @@ export function ForecastApp({ initialView, initialPath }: ForecastAppProps) {
       window.localStorage.removeItem("demandly_access_token");
       setAuthToken(null);
       setAuthUser(null);
+      setLiveMeta(null);
+      setLiveWorkspaceId(null);
       navigate("/login");
     }
     setToast("เปลี่ยนรหัสผ่านสำเร็จ");
@@ -1047,5 +1065,5 @@ export function ForecastApp({ initialView, initialPath }: ForecastAppProps) {
   const selectedAlert = getAlert(selectedAlertId);
   const meta = pageMeta[view];
 
-  return <div className="app-shell"><Sidebar activeView={view} isOpen={sidebarOpen} onNavigate={navigate} onClose={() => setSidebarOpen(false)} user={authUser} /><div className="app-main"><Topbar title={meta.title} eyebrow={meta.eyebrow} onMenu={() => setSidebarOpen(true)} onNavigate={navigate} onRefresh={refreshDashboard} userLabel={accountDisplayName(authUser)} /><main className="content-scroll">{!isStaticDemo && authToken && <div className="workspace-mode-bar"><div className="workspace-mode-buttons" role="group" aria-label="เลือกมุมมอง"><button type="button" aria-pressed={!showDatabaseTools} onClick={() => setShowDatabaseTools(false)}>หน้าจอเดิม</button><button type="button" aria-pressed={showDatabaseTools} onClick={() => setShowDatabaseTools(true)}>เครื่องมือฐานข้อมูล</button></div><span>{showDatabaseTools ? "ข้อมูลที่นำเข้าและผลคำนวณจากฐานข้อมูล" : "มุมมองตัวอย่างเดิม · ใช้เครื่องมือฐานข้อมูลเพื่อนำเข้าและคำนวณจริง"}</span></div>}{!isStaticDemo && authToken && showDatabaseTools ? <OperationalWorkspace key={toolsRefresh} embedded token={authToken} user={authUser} view={view} onNavigate={navigate} onLogout={handleLogout} onChangePassword={handleChangePassword} /> : <>{view === "dashboard" && <DashboardView loading={dashboardLoading} userName={accountDisplayName(authUser)} onNavigate={navigate} onRefresh={refreshDashboard} />}{view === "forecast" && <ForecastView stage={forecastStage} statusIndex={forecastStatusIndex} productId={forecastProductId} region={forecastRegion} period={forecastPeriod} signals={forecastSignals} onProductChange={setForecastProductId} onRegionChange={setForecastRegion} onPeriodChange={setForecastPeriod} onToggleSignal={toggleSignal} onRun={runForecast} onNavigate={navigate} onReset={() => setForecastStage("setup")} />}{view === "data" && <DataView step={dataStep} fileName={fileName} onFile={chooseFile} onStep={setDataStep} onNavigate={navigate} />}{view === "products" && (currentPath.startsWith("/products/") ? <ProductDetailView product={selectedProduct} onNavigate={navigate} /> : <ProductsView query={productQuery} onQuery={setProductQuery} onNavigate={navigate} />)}{view === "alerts" && (currentPath.startsWith("/alerts/") ? <AlertDetailView alert={selectedAlert} isReviewed={reviewedAlerts.includes(selectedAlert.id)} onReview={() => markAlertReviewed(selectedAlert.id)} onNavigate={navigate} /> : <AlertsView filter={alertFilter} onFilter={setAlertFilter} onNavigate={navigate} reviewed={reviewedAlerts} />)}{view === "monitoring" && <MonitoringView onNavigate={navigate} />}{view === "settings" && <SettingsView onNavigate={navigate} onLogout={handleLogout} onChangePassword={handleChangePassword} />}</>}</main></div><Toast message={toast} onClose={() => setToast("")} /></div>;
+  return <div className="app-shell"><Sidebar activeView={view} isOpen={sidebarOpen} onNavigate={navigate} onClose={() => setSidebarOpen(false)} user={authUser} workspaceMeta={liveMeta} onWorkspaceChange={setLiveWorkspaceId} /><div className="app-main"><Topbar title={meta.title} eyebrow={meta.eyebrow} onMenu={() => setSidebarOpen(true)} onNavigate={navigate} onRefresh={refreshDashboard} userLabel={accountDisplayName(authUser)} liveAlerts={liveMeta?.alerts} /><main className="content-scroll">{!isStaticDemo && authToken ? <LiveWorkspace key={liveWorkspaceId ?? "own"} token={authToken} user={authUser} view={view} path={currentPath} workspaceId={liveWorkspaceId} refreshKey={liveRefresh} onMetadata={setLiveMeta} onNavigate={navigate} onLogout={handleLogout} onChangePassword={handleChangePassword} /> : <>{view === "dashboard" && <DashboardView loading={dashboardLoading} userName={accountDisplayName(authUser)} onNavigate={navigate} onRefresh={refreshDashboard} />}{view === "forecast" && <ForecastView stage={forecastStage} statusIndex={forecastStatusIndex} productId={forecastProductId} region={forecastRegion} period={forecastPeriod} signals={forecastSignals} onProductChange={setForecastProductId} onRegionChange={setForecastRegion} onPeriodChange={setForecastPeriod} onToggleSignal={toggleSignal} onRun={runForecast} onNavigate={navigate} onReset={() => setForecastStage("setup")} />}{view === "data" && <DataView step={dataStep} fileName={fileName} onFile={chooseFile} onStep={setDataStep} onNavigate={navigate} />}{view === "products" && (currentPath.startsWith("/products/") ? <ProductDetailView product={selectedProduct} onNavigate={navigate} /> : <ProductsView query={productQuery} onQuery={setProductQuery} onNavigate={navigate} />)}{view === "alerts" && (currentPath.startsWith("/alerts/") ? <AlertDetailView alert={selectedAlert} isReviewed={reviewedAlerts.includes(selectedAlert.id)} onReview={() => markAlertReviewed(selectedAlert.id)} onNavigate={navigate} /> : <AlertsView filter={alertFilter} onFilter={setAlertFilter} onNavigate={navigate} reviewed={reviewedAlerts} />)}{view === "monitoring" && <MonitoringView onNavigate={navigate} />}{view === "settings" && <SettingsView onNavigate={navigate} onLogout={handleLogout} onChangePassword={handleChangePassword} />}</>}</main></div><Toast message={toast} onClose={() => setToast("")} /></div>;
 }

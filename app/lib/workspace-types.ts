@@ -1,0 +1,15 @@
+export type Workspace = { id: number; name: string; role: string; data_version: number; settings: { auto_refresh?: boolean; compact_table?: boolean; alert_threshold_percent?: number }; workspaces: {id: number; name: string; role: string}[] };
+export type Product = { id: number; code: string; name: string; lead_time_days: number; safety_stock: number };
+export type Point = { date: string; forecast: number; baseline?: number; lower?: number; upper?: number; actual?: number };
+export type Metrics = { mae: number; wape_percent: number | null; bias: number };
+export type Run = { inventory_snapshot?: Inventory | null; id: number; product_code: string; region: string; model: string; total: number; origin: string; horizon: number; data_version: number; created_at: string; points: Point[]; history: {date: string; actual: number}[]; backtest: Point[]; metrics: Metrics; change_percent: number | null; signals: string[]; selection_mae: Record<string, number>; missing_days_filled_zero: number; interval_method: string; metric_scope: string; signal_source: string };
+export type Alert = { id: number; forecast_id: number; level: string; message: string; review_status: string; review_note: string | null; reviewed_by: number | null; reviewed_at: string | null; stale: boolean };
+export type Report = { total_rows: number; valid_rows: number; invalid_rows: number; exact_duplicate_rows: number; missing_inventory: number; quality_percent: number; start_date: string; end_date: string; errors: {row: number; error: string}[]; preview: Record<string, string | number | null>[] };
+export type Job = { id: number; filename: string; status: string; report: Report; created_at: string };
+export type Dataset = { id: string; filename: string; rows: number };
+export type Dashboard = { records: number; last_date: string | null; recent_sales: number; pending_alerts: number; data_version: number; products: {code: string; quantity: number}[]; regions: {region: string; quantity: number}[]; trend: {date: string; actual: number}[]; latest_forecast: Run | null };
+export type Inventory = { product_code: string; region: string; sale_date: string; inventory: number };
+export type Monitor = { runs: {id: number; product_code: string; region: string; stale: boolean; lineage_changed: boolean; holdout: Metrics; live_metrics: Metrics | null; matched_days: number; actual_vs_forecast: Point[]; backtest: Point[]}[]; events: {action: string; detail: string; created_at: string}[] };
+export type Member = { id: number; username: string; role: string };
+export type Preview = { headers: string[]; total_rows: number; preview: Record<string, string>[]; suggested_mapping: Record<string, string> };
+export type QueryResult = {items: Record<string, string | number | null>[]; query_ms: number; plan: unknown; note: string};

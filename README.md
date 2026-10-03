@@ -1,7 +1,7 @@
-## Operational mock-data workflow
+## Demand forecasting workflow
 
 ระบบ Full-stack เชื่อม Upload → Validation → PostgreSQL → Forecast → Alerts/Review → Monitoring จริงแล้ว
-ใช้ dataset จำลองทั้ง 5 ชุด; โมเดลเป็น statistical forecasting และ external signals/ERP เป็น mock.
+นำเข้า CSV/Excel ของคุณเองผ่านหน้าจอเดิม; โมเดลเป็น statistical forecasting ที่คำนวณจากยอดขายในฐานข้อมูล.
 ดู [คู่มือใช้งาน](docs/USER-GUIDE.md), [ดูแลระบบ/backup/deployment](docs/OPERATIONS.md)
 และ [ผลทดสอบระบบ](docs/VALIDATION.md).
 

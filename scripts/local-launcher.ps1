@@ -165,7 +165,7 @@ try{
         if(!$ready){throw 'Readiness failed. Inspect .cache/local-api-error.log and .cache/local-web-error.log.'}
         Write-Host "Web: $($state.webUrl)" -ForegroundColor Green
         Write-Host "API docs: $($state.apiUrl)/docs"
-        Write-Host 'Create an account, then import a mock dataset from the Data page. Use stop-local.cmd to stop.'
+        Write-Host 'Create an account, then upload your CSV or Excel file from the Data page. Use stop-local.cmd to stop.'
         if(!$NoBrowser){Start-Process $state.webUrl}
     }
 }catch{$exitCode=1;Write-Host "ERROR: $($_.Exception.Message)" -ForegroundColor Red}
