@@ -1,0 +1,23 @@
+.story-container { display: flex; flex-direction: column; gap: 24px; padding-bottom: 40px; }
+.story-header-panel { background: linear-gradient(135deg, #0f1e36, #152949); color: white; border-radius: 16px; padding: 24px 28px; box-shadow: 0 12px 32px rgba(15,30,54,.16); }
+.story-header-content { display: flex; flex-direction: column; gap: 16px; }
+.story-badge { align-self: flex-start; color: #70edde; background: #124d52; padding: 5px 12px; border-radius: 20px; font-size: 12px; }
+.story-header-title { margin: 0; color: white; font-size: 24px; }
+.story-header-desc { margin: 0; color: #c2d2e8; line-height: 1.7; }
+.story-nav-tabs { display: flex; flex-wrap: wrap; gap: 8px; }
+.story-tab-btn { border: 1px solid #526880; border-radius: 8px; padding: 10px 16px; color: #dae5f4; background: transparent; cursor: pointer; font: inherit; }
+.story-tab-btn.is-active { color: white; background: #087e74; border-color: #19b5a7; }
+.story-tab-btn:focus-visible { outline: 3px solid #70edde; outline-offset: 3px; }
+.story-selectors { display: flex; align-items: end; flex-wrap: wrap; gap: 16px; }
+.story-selectors .form-field { flex: 1; min-width: 200px; }
+.story-evidence { display: grid; grid-template-columns: minmax(150px, 1fr) 3fr; gap: 16px; }
+.story-evidence dt { font-weight: 600; }
+.story-evidence dd { margin: 0; overflow-wrap: anywhere; }
+.planning-result { margin: 20px 0; padding: 20px; background: #e8f8f3; border-radius: 12px; color: #075e50; }
+.planning-result > strong { font-size: 32px; }
+.planning-result small { font-size: 16px; }
+.planning-result p { margin: 8px 0; }
+.planning-history { margin: 12px 0; padding: 16px; border: 1px solid var(--border, #dbe4eb); border-radius: 10px; }
+.planning-history summary { cursor: pointer; font-weight: 600; }
+.replenishment-panel > p, .replenishment-panel form > p { line-height: 1.7; }
+@media (max-width: 600px) { .story-header-panel { padding: 20px; } .story-evidence { grid-template-columns: 1fr; gap: 8px; } .story-evidence dd { margin-bottom: 12px; } .planning-result > strong { font-size: 26px; } }

@@ -84,3 +84,18 @@ class AuditEvent(Base):
     action: Mapped[str] = mapped_column(String(64))
     detail: Mapped[str] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+
+
+class ReplenishmentPlan(Base):
+    __tablename__ = 'replenishment_plans'
+    id: Mapped[int] = mapped_column(primary_key=True)
+    workspace_id: Mapped[int] = mapped_column(ForeignKey('workspaces.id', ondelete='CASCADE'), index=True)
+    forecast_id: Mapped[int] = mapped_column(ForeignKey('forecast_runs.id', ondelete='CASCADE'))
+    created_by: Mapped[int] = mapped_column(ForeignKey('users.id'))
+    calculation: Mapped[dict] = mapped_column(JSON)
+    status: Mapped[str] = mapped_column(String(20), default='pending')
+    note: Mapped[str] = mapped_column(Text)
+    reviewed_by: Mapped[int | None] = mapped_column(ForeignKey('users.id'), nullable=True)
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    review_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)

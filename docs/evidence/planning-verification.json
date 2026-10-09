@@ -1,0 +1,15 @@
+{
+  "checked_at": "2026-10-09",
+  "database": "Native PostgreSQL",
+  "migration": "0003_replenishment",
+  "sales_records": 280,
+  "region": "Bangkok",
+  "stock": 1000,
+  "daily_actual_average": 100,
+  "forecast_30_days": 3000.0,
+  "incoming_units": 700,
+  "safety_stock": 100,
+  "recommended_units": 1400,
+  "review_persisted": true,
+  "inventory_unchanged_after_approval": true
+}

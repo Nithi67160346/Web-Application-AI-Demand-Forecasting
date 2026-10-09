@@ -3,6 +3,7 @@ import base64
 import binascii
 import hashlib
 import json
+import math
 from datetime import date, timedelta
 from pathlib import Path
 from time import perf_counter
@@ -16,7 +17,7 @@ from sqlalchemy.exc import IntegrityError
 from .database import get_db
 from .deps import get_current_auth
 from .models import SalesRecord, User, utc_now
-from .workflow_models import Workspace, WorkspaceMember, ProductRecord, ImportJob, ForecastRun, AlertRecord, AuditEvent
+from .workflow_models import Workspace, WorkspaceMember, ProductRecord, ImportJob, ForecastRun, AlertRecord, AuditEvent, ReplenishmentPlan
 from .importing import FIELDS, MAX_BYTES, read_file, validate_rows
 from .forecasting import forecast_series
 
@@ -269,6 +270,7 @@ class ProductUpdate(BaseModel):
 @router.put('/products/{product_id}')
 def update_product(product_id: int, payload: ProductUpdate, ctx=Depends(context)):
     authorize(ctx)
+    ctx[3].scalar(select(Workspace).where(Workspace.id == ctx[0].id).with_for_update().execution_options(populate_existing=True))
     product = owned(ProductRecord, product_id, ctx)
     for key, value in payload.model_dump().items():
         setattr(product, key, value)
@@ -283,19 +285,19 @@ def inventory(ctx=Depends(context)):
 
 
 @router.get('/products/{product_id}/summary')
-def product_summary(product_id: int, ctx=Depends(context)):
+def product_summary(product_id: int, region: str | None = Query(default=None, min_length=1, max_length=64), ctx=Depends(context)):
     product = owned(ProductRecord, product_id, ctx)
-    rows = daily_rows(ctx, product.code)
+    rows = daily_rows(ctx, product.code, region)
     end = rows[-1][0] if rows else None
     recent = [(day, quantity) for day, quantity in rows if day > end-timedelta(days=30)] if end else []
     regions = ctx[3].execute(select(SalesRecord.region, func.sum(SalesRecord.sales_quantity))
         .where(SalesRecord.user_id == ctx[0].owner_id, SalesRecord.product_code == product.code)
         .group_by(SalesRecord.region).order_by(SalesRecord.region)).all()
-    return {'code': product.code, 'last_date': end, 'recent_sales': sum(q for _, q in recent),
+    return {'code': product.code, 'region': region, 'last_date': end, 'recent_sales': sum(q for _, q in recent),
             'daily_average': sum(q for _, q in recent)/30 if recent else 0,
             'trend': [{'date': day, 'actual': quantity} for day, quantity in rows[-90:]],
             'regions': [{'region': region, 'quantity': quantity} for region, quantity in regions],
-            'inventory': inventory_snapshots(ctx, product.code)}
+            'inventory': [s for s in inventory_snapshots(ctx, product.code) if region is None or s['region'] == region]}
 
 
 class ForecastRequest(BaseModel):
@@ -305,6 +307,101 @@ class ForecastRequest(BaseModel):
     signals: list[Literal['disease', 'seasonality', 'policy', 'population']] = Field(default_factory=list, max_length=4)
     acknowledge_missing_days: bool = False
     as_of: date | None = None
+
+
+class PlanRequest(BaseModel):
+    forecast_id: int = Field(gt=0)
+    incoming_units: int = Field(default=0, ge=0, le=2147483647, strict=True)
+    note: str = Field(min_length=1, max_length=2000)
+
+
+class PlanReview(BaseModel):
+    status: Literal['approved', 'dismissed']
+    note: str = Field(min_length=1, max_length=2000)
+
+
+def planning_calculation(ctx, run, incoming):
+    workspace = ctx[0]
+    if run.data_version != workspace.data_version or run.data_generation != workspace.data_generation:
+        raise HTTPException(409, 'Sales changed. Create a new forecast before planning.')
+    rows = daily_rows(ctx, run.product_code, run.region)
+    result = run.result
+    if not rows or rows[-1][0].isoformat() != result['origin']:
+        raise HTTPException(409, 'Use a forecast at the latest sales date for this region.')
+    stock = next((s for s in inventory_snapshots(ctx, run.product_code) if s['region'] == run.region), None)
+    if not stock or stock['sale_date'].isoformat() != result['origin']:
+        raise HTTPException(409, 'Import an inventory snapshot at the latest sales date before planning.')
+    product = ctx[3].scalar(select(ProductRecord).where(ProductRecord.workspace_id == workspace.id, ProductRecord.code == run.product_code))
+    if product is None or product.lead_time_days > result['horizon']:
+        raise HTTPException(409, 'Forecast horizon must cover the product lead time.')
+    lead_demand = sum(p['forecast'] for p in result['points'][:product.lead_time_days])
+    return {'product_code': run.product_code, 'region': run.region, 'origin': result['origin'],
+            'horizon': result['horizon'], 'forecast_total': result['total'], 'on_hand': stock['inventory'],
+            'snapshot_date': stock['sale_date'].isoformat(), 'incoming_units': incoming,
+            'safety_stock': product.safety_stock, 'lead_time_days': product.lead_time_days,
+            'lead_time_demand': lead_demand, 'reorder_point': math.ceil(lead_demand + product.safety_stock),
+            'recommended_units': max(0, math.ceil(result['total'] + product.safety_stock - stock['inventory'] - incoming)),
+            'urgent': stock['inventory'] < lead_demand + product.safety_stock,
+            'data_version': workspace.data_version, 'data_generation': workspace.data_generation}
+
+
+def serialize_plan(plan, ctx):
+    calculation = plan.calculation
+    product = ctx[3].scalar(select(ProductRecord).where(ProductRecord.workspace_id == ctx[0].id, ProductRecord.code == calculation['product_code']))
+    stale = (calculation['data_version'] != ctx[0].data_version or calculation['data_generation'] != ctx[0].data_generation
+             or product is None or product.lead_time_days != calculation['lead_time_days'] or product.safety_stock != calculation['safety_stock'])
+    return {'id': plan.id, 'forecast_id': plan.forecast_id, 'calculation': calculation, 'status': plan.status,
+            'note': plan.note, 'created_by': plan.created_by, 'created_at': plan.created_at.isoformat(),
+            'reviewed_by': plan.reviewed_by, 'reviewed_at': plan.reviewed_at.isoformat() if plan.reviewed_at else None,
+            'review_note': plan.review_note, 'stale': stale}
+
+
+@router.get('/replenishments')
+def list_plans(ctx=Depends(context)):
+    return [serialize_plan(p, ctx) for p in ctx[3].scalars(select(ReplenishmentPlan).where(
+        ReplenishmentPlan.workspace_id == ctx[0].id).order_by(ReplenishmentPlan.id.desc()).limit(100))]
+
+
+@router.post('/replenishments', status_code=201)
+def create_plan(payload: PlanRequest, ctx=Depends(context)):
+    authorize(ctx)
+    workspace, user, _, db = ctx
+    workspace = db.scalar(select(Workspace).where(Workspace.id == workspace.id).with_for_update().execution_options(populate_existing=True))
+    run = owned(ForecastRun, payload.forecast_id, ctx)
+    calculation = planning_calculation(ctx, run, payload.incoming_units)
+    if not payload.note.strip():
+        raise HTTPException(422, 'Enter the planning reason.')
+    plan = ReplenishmentPlan(workspace_id=workspace.id, forecast_id=run.id, created_by=user.id,
+                            calculation=calculation, note=payload.note.strip())
+    db.add(plan)
+    db.flush()
+    audit(ctx, 'replenishment.proposed', f'Plan {plan.id}: {calculation["recommended_units"]} units / {run.region}')
+    db.commit()
+    return serialize_plan(plan, ctx)
+
+
+@router.put('/replenishments/{plan_id}/review')
+def review_plan(plan_id: int, payload: PlanReview, ctx=Depends(context)):
+    authorize(ctx)
+    workspace, user, _, db = ctx
+    db.scalar(select(Workspace).where(Workspace.id == workspace.id).with_for_update().execution_options(populate_existing=True))
+    plan = owned(ReplenishmentPlan, plan_id, ctx)
+    db.refresh(plan)
+    if plan.status != 'pending':
+        raise HTTPException(409, 'This plan has already been reviewed.')
+    if not payload.note.strip():
+        raise HTTPException(422, 'Enter the review reason.')
+    if payload.status == 'approved':
+        calculation = planning_calculation(ctx, owned(ForecastRun, plan.forecast_id, ctx), plan.calculation['incoming_units'])
+        if calculation != plan.calculation:
+            raise HTTPException(409, 'Planning inputs changed. Create a new proposal.')
+    plan.status = payload.status
+    plan.review_note = payload.note.strip()
+    plan.reviewed_by = user.id
+    plan.reviewed_at = utc_now()
+    audit(ctx, 'replenishment.reviewed', f'Plan {plan.id}: {payload.status}')
+    db.commit()
+    return serialize_plan(plan, ctx)
 
 
 @router.post('/forecasts', status_code=201)

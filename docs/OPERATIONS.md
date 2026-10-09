@@ -5,6 +5,8 @@
 Docker / Local launcher รัน `alembic upgrade head` ก่อนเปิด API.
 Revision 0001 เป็น schema snapshot ที่ไม่ import model รุ่นใหม่ ยอมรับตาราง auth/sales เดิมโดยไม่ลบข้อมูล.
 Revision 0002 เพิ่ม data lineage และถือ Forecast ที่ไม่มี lineage จากเวอร์ชันเก่าเป็น legacy.
+Revision 0003 เพิ่ม `replenishment_plans` สำหรับแผนเติมสินค้าและประวัติการทบทวน
+โดยไม่แก้ยอดขาย สต็อก หรือผล Forecast เดิม. Launcher/production entrypoint อัปเดตด้วย `alembic upgrade head`.
 การเปลี่ยน schema ครั้งต่อไปสร้าง migration ใหม่ อย่าแก้ revision ที่ใช้ไปแล้ว.
 
 ```powershell

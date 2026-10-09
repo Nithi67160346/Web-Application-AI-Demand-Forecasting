@@ -9,7 +9,9 @@ import { zipSync, strToU8 } from "fflate";
 globalThis.DOMParser = DOMParser;
 await mkdir(new URL("../.cache/", import.meta.url), { recursive: true });
 const modulePath = new URL("../.cache/browser-demo-test.mjs", import.meta.url);
-await writeFile(modulePath, transpileModule(await readFile(new URL("../app/lib/browser-demo.ts", import.meta.url), "utf8"), { compilerOptions: { module: ModuleKind.ESNext, target: ScriptTarget.ES2022 } }).outputText);
+const compile = (source) => transpileModule(source, { compilerOptions: { module: ModuleKind.ESNext, target: ScriptTarget.ES2022 } }).outputText;
+await writeFile(new URL("../.cache/planning-test.mjs", import.meta.url), compile(await readFile(new URL("../app/lib/planning.ts", import.meta.url), "utf8")));
+await writeFile(modulePath, compile(await readFile(new URL("../app/lib/browser-demo.ts", import.meta.url), "utf8")).replace('"./planning"', '"./planning-test.mjs"'));
 const { BrowserDemo, parseCsv, exampleCsv } = await import(modulePath.href);
 const engine = () => new BrowserDemo(`test-${crypto.randomUUID()}`);
 const file = (text = exampleCsv(), filename = "sales.csv") => ({ filename, content_base64: Buffer.from(text).toString("base64") });
@@ -18,6 +20,52 @@ const imported = async (demo, payload = file(), mode = "append", acknowledge_dup
   return demo.request(`/imports/${job.id}/commit`, { mode, acknowledge_duplicates });
 };
 const run = (demo, extra = {}) => demo.request("/forecasts", { product_code: "SKU-001", region: "กรุงเทพฯ", horizon: 30, ...extra });
+
+test("regional metrics and reviewed replenishment plans persist without changing inventory", async () => {
+  const name = `planning-${crypto.randomUUID()}`, demo = new BrowserDemo(name);
+  const lines = exampleCsv().trim().split("\r\n");
+  const sales = lines.join("\r\n").replaceAll(",500", ",1000");
+  const south = lines.slice(1).map(line => line.replace("กรุงเทพฯ", "South").replace(/,\d+,500$/, ",200,5000")).join("\r\n");
+  await imported(demo, file(sales + "\r\n" + south));
+  const product = (await demo.request("/products"))[0];
+  await demo.request(`/products/${product.id}`, { ...product, safety_stock: 100 }, "PUT");
+  const summary = await demo.request(`/products/${product.id}/summary?region=South`);
+  assert.equal(summary.recent_sales, 6000); assert.equal(summary.daily_average, 200);
+  assert.equal(summary.inventory.length, 1); assert.equal(summary.inventory[0].inventory, 5000);
+  const forecast = await run(demo, { region: "South" });
+  const plan = await demo.request("/replenishments", { forecast_id: forecast.id, incoming_units: 700, note: "Confirmed deliveries within horizon" });
+  assert.equal(plan.calculation.recommended_units, 400);
+  assert.equal(plan.calculation.reorder_point, 2900);
+  assert.equal(plan.calculation.urgent, false);
+  const review = await demo.request(`/replenishments/${plan.id}/review`, { status: "approved", note: "Checked supply dates" }, "PUT");
+  assert.ok(review.reviewed_at); assert.equal(review.reviewed_by, 1);
+  assert.equal((await new BrowserDemo(name).request("/replenishments"))[0].status, "approved");
+  assert.equal((await demo.request(`/products/${product.id}/summary?region=South`)).inventory[0].inventory, 5000);
+  await assert.rejects(demo.request(`/replenishments/${plan.id}/review`, { status: "approved", note: "Again" }, "PUT"), /ทบทวนแล้ว/);
+  const zero = await demo.request("/replenishments", { forecast_id: forecast.id, incoming_units: 10000, note: "Enough supply" });
+  assert.equal(zero.calculation.recommended_units, 0);
+});
+
+test("plans reject changed sales, changed policy, backdated forecasts and missing stock", async () => {
+  const demo = engine(); await imported(demo);
+  const forecast = await run(demo);
+  const request = { forecast_id: forecast.id, incoming_units: 0, note: "Review supply" };
+  for (const incoming_units of [-1, 1.5, "10", true]) await assert.rejects(demo.request("/replenishments", { ...request, incoming_units }), /จำนวนเต็ม/);
+  const plan = await demo.request("/replenishments", request);
+  const product = (await demo.request("/products"))[0];
+  await demo.request(`/products/${product.id}`, { ...product, safety_stock: 100 }, "PUT");
+  assert.equal((await demo.request("/replenishments"))[0].stale, true);
+  await assert.rejects(demo.request(`/replenishments/${plan.id}/review`, { status: "approved", note: "Approve" }, "PUT"), /ข้อมูลวางแผนเปลี่ยน/);
+  const short = await run(demo, { horizon: 7 });
+  await assert.rejects(demo.request("/replenishments", { ...request, forecast_id: short.id }), /Lead time/);
+  const backdated = await run(demo, { as_of: "2026-09-20" });
+  await assert.rejects(demo.request("/replenishments", { ...request, forecast_id: backdated.id }), /วันยอดขายล่าสุด/);
+  await imported(demo, file(exampleCsv(true), "actuals.csv"));
+  await assert.rejects(demo.request("/replenishments", request), /ยอดขายเปลี่ยน/);
+  await imported(demo, file(exampleCsv().replaceAll(",500", ","), "no-stock.csv"), "replace");
+  const fresh = await run(demo);
+  await assert.rejects(demo.request("/replenishments", { ...request, forecast_id: fresh.id }), /Inventory/);
+});
 
 test("CSV preserves quoted multiline text, escaped quotes and zero values", () => {
   const result = parseCsv('\ufeffDate,Product,Region,Quantity\r\n2026-01-01,"Item, A","North\nArea",0\r\n2026-01-02,"Item ""B""",South,1');

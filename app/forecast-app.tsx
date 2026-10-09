@@ -32,6 +32,7 @@ import {
 
 export type AppView =
   | "dashboard"
+  | "storytelling"
   | "forecast"
   | "products"
   | "alerts"
@@ -64,6 +65,7 @@ const signalOptions = [
 ];
 
 const pageMeta: Record<AppView, { title: string; eyebrow: string }> = {
+  storytelling: { title: "สรุปเพื่อวางแผนสินค้า", eyebrow: "Story Dashboard" },
   dashboard: { title: "ภาพรวม Demand Forecast", eyebrow: "Overview" },
   forecast: { title: "การพยากรณ์ Demand", eyebrow: "Forecast workspace" },
   products: { title: "สินค้าทั้งหมด", eyebrow: "Product portfolio" },
@@ -110,6 +112,7 @@ function Icon({ name, className = "" }: { name: string; className?: string }) {
 }
 
 function viewFromPath(path: string): AppView {
+  if (path.startsWith("/story-dashboard")) return "storytelling";
   if (path.startsWith("/login")) return "login";
   if (path.startsWith("/register")) return "register";
   if (path.startsWith("/forecast")) return "forecast";
@@ -122,6 +125,7 @@ function viewFromPath(path: string): AppView {
 }
 
 function pathForView(view: AppView) {
+  if (view === "storytelling") return "/story-dashboard";
   if (view === "forecast") return "/forecast/new";
   if (view === "data") return "/data/upload";
   if (view === "login") return "/login";
@@ -886,7 +890,7 @@ export function ForecastApp({ initialView, initialPath }: ForecastAppProps) {
 
   useEffect(() => {
     function handlePopState() {
-      const path = stripAppBasePath(window.location.pathname);
+      const path = stripAppBasePath(window.location.pathname) + window.location.search;
       setCurrentPath(path);
       setView(viewFromPath(path));
       setSelectedProductId(path.split("/")[2] || "test-kit-a");

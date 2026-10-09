@@ -39,6 +39,9 @@ Frontend Workflow ของ AI Demand Forecasting Platform
 - Forecast workspace: เลือก Product/Region และ 7–180 วัน คำนวณจากยอดขายที่นำเข้า และเก็บประวัติผลลัพธ์
 - Model evaluation: Validation MAE, Holdout WAPE, ช่วงความไม่แน่นอน และ Human review decision support
 - Products: Product portfolio, Inventory health, Demand by region และ Product detail
+- Story Dashboard: สรุปยอดขายและ Forecast พร้อมหลักฐานในสินค้า/พื้นที่เดียวกัน และคำอธิบายสูตร
+- Replenishment planning: คำนวณจำนวนควรเติมจาก Forecast, Safety stock, สต็อกและสินค้ารอรับ
+  บันทึกแผนและผลอนุมัติพร้อมผู้ทบทวน/เวลา โดยเก็บสต็อกตามข้อมูลนำเข้า
 - Alerts: High/Medium/Low priority, Alert detail และ Mark as reviewed
 - Monitoring: Actual vs Forecast performance, Model health และ Re-forecast loop
 - Login / Register / Settings: สมัครสมาชิกและเข้าสู่ระบบจริงผ่าน REST API รวมถึงเปลี่ยนรหัสผ่านและ Logout

@@ -42,6 +42,7 @@ test("server-renders the public login entry page", async () => {
 test("renders the main journey routes", async () => {
   const routes = [
     "/dashboard",
+    "/story-dashboard",
     "/data/upload",
     "/forecast/new",
     "/products",

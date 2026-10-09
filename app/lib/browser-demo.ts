@@ -1,10 +1,11 @@
 import { unzipSync, strFromU8 } from "fflate";
-import type { Alert, Inventory, Job, Product, Run, Workspace } from "./workspace-types";
+import type { Alert, Inventory, Job, Product, Run, Workspace, Replenishment } from "./workspace-types";
+import { calculatePlanning } from "./planning";
 
 type Sale = { sale_date: string; product_code: string; region: string; sales_quantity: number; inventory: number | null };
 type Staged = Job & { rows: Sale[]; source_version: number; generation: number; fingerprint: string };
 type SavedRun = Run & { data_generation: number };
-type DemoState = { workspace: Workspace; generation: number; sales: Sale[]; products: Product[]; jobs: Staged[]; runs: SavedRun[]; alerts: Alert[]; events: { action: string; detail: string; created_at: string }[]; nextId: number };
+type DemoState = { workspace: Workspace; generation: number; sales: Sale[]; products: Product[]; jobs: Staged[]; runs: SavedRun[]; alerts: Alert[]; plans?: Replenishment[]; events: { action: string; detail: string; created_at: string }[]; nextId: number };
 type Parsed = { headers: string[]; rows: Record<string, string>[] };
 type FilePayload = { filename: string; content_base64: string; mapping?: Record<string, string> };
 type ForecastPayload = { product_code: string; region: string; horizon: number; as_of?: string | null; acknowledge_missing_days?: boolean; signals?: string[] };
@@ -230,10 +231,37 @@ function dispatch(state: DemoState, rawPath: string, body: unknown, method: stri
   if (productPath) {
     const product = productById(Number(productPath[1]));
     if (method === "PUT") { requireValue(typeof payload.name === "string" && payload.name.trim().length > 0 && payload.name.length <= 120, "ชื่อสินค้าต้องมี 1–120 ตัวอักษร"); requireValue(Number.isInteger(payload.lead_time_days) && Number(payload.lead_time_days) >= 1 && Number(payload.lead_time_days) <= 365 && Number.isInteger(payload.safety_stock) && Number(payload.safety_stock) >= 0 && Number(payload.safety_stock) <= 2147483647, "Lead time หรือ Safety stock ไม่ถูกต้อง"); Object.assign(product, payload); audit(state, "product.updated", product.code); return { message: "Product saved." }; }
-    const rows = daily(state, product.code), end = rows.at(-1)?.date; const recent = end ? rows.filter(r => r.date > plusDay(end, -30)).reduce((s, r) => s + r.actual, 0) : 0;
-    const subset = { ...state, sales: state.sales.filter(r => r.product_code === product.code) }; return { code: product.code, last_date: end ?? null, recent_sales: recent, daily_average: recent / 30, trend: rows.slice(-90), regions: totals(subset, "region"), inventory: inventory(state, product.code) };
+    const region = url.searchParams.get("region") || undefined;
+    const rows = daily(state, product.code, region), end = rows.at(-1)?.date; const recent = end ? rows.filter(r => r.date > plusDay(end, -30)).reduce((s, r) => s + r.actual, 0) : 0;
+    const subset = { ...state, sales: state.sales.filter(r => r.product_code === product.code) }; return { code: product.code, region: region ?? null, last_date: end ?? null, recent_sales: recent, daily_average: recent / 30, trend: rows.slice(-90), regions: totals(subset, "region"), inventory: inventory(state, product.code).filter(s => !region || s.region === region) };
   }
   if (path === "/inventory") return inventory(state);
+  const planCalculation = (run: SavedRun, incoming: number) => {
+    requireValue(run.data_generation === state.generation, "ชุดข้อมูลเปลี่ยนแล้ว กรุณาสร้าง Forecast ใหม่");
+    const product = state.products.find(p => p.code === run.product_code); requireValue(product, "ไม่พบสินค้า");
+    const stock = inventory(state, product.code).find(s => s.region === run.region);
+    return { ...calculatePlanning(run, product, stock, incoming, state.workspace.data_version, daily(state, product.code, run.region).at(-1)?.date), data_generation: state.generation };
+  };
+  const publicPlan = (plan: Replenishment) => {
+    const product = state.products.find(p => p.code === plan.calculation.product_code);
+    return { ...plan, stale: plan.calculation.data_version !== state.workspace.data_version || plan.calculation.data_generation !== state.generation || !product || product.lead_time_days !== plan.calculation.lead_time_days || product.safety_stock !== plan.calculation.safety_stock };
+  };
+  if (path === "/replenishments") {
+    if (method === "GET") return (state.plans ?? []).slice(0, 100).map(publicPlan);
+    requireValue(typeof payload.note === "string" && payload.note.trim().length > 0 && payload.note.length <= 2000, "กรุณาระบุเหตุผลของแผน ไม่เกิน 2,000 ตัวอักษร");
+    requireValue(Number.isInteger(payload.forecast_id) && Number(payload.forecast_id) > 0, "ไม่พบ Forecast");
+    const calculation = planCalculation(runById(Number(payload.forecast_id)), payload.incoming_units === undefined ? 0 : payload.incoming_units as number);
+    const plan: Replenishment = { id: state.nextId++, forecast_id: Number(payload.forecast_id), calculation, status: "pending", note: payload.note.trim(), created_by: 1, created_at: now(), reviewed_by: null, reviewed_at: null, review_note: null, stale: false };
+    (state.plans ??= []).unshift(plan); audit(state, "replenishment.proposed", `Plan ${plan.id}: ${calculation.recommended_units} units / ${calculation.region}`); return publicPlan(plan);
+  }
+  const planReview = path.match(/^\/replenishments\/(\d+)\/review$/);
+  if (planReview && method === "PUT") {
+    const plan = state.plans?.find(p => p.id === Number(planReview[1])); requireValue(plan, "ไม่พบแผนเติมสินค้า");
+    requireValue(plan.status === "pending", "แผนนี้ได้รับการทบทวนแล้ว");
+    requireValue(["approved", "dismissed"].includes(String(payload.status)) && typeof payload.note === "string" && payload.note.trim().length > 0 && payload.note.length <= 2000, "กรุณาระบุสถานะและเหตุผลของการทบทวน");
+    if (payload.status === "approved") requireValue(JSON.stringify(planCalculation(runById(plan.forecast_id), plan.calculation.incoming_units)) === JSON.stringify(plan.calculation), "ข้อมูลวางแผนเปลี่ยนแล้ว กรุณาบันทึกแผนใหม่");
+    Object.assign(plan, { status: payload.status, review_note: payload.note.trim(), reviewed_by: 1, reviewed_at: now() }); audit(state, "replenishment.reviewed", `Plan ${plan.id}: ${payload.status}`); return publicPlan(plan);
+  }
   if (path === "/forecasts") return method === "GET" ? state.runs.slice(0, 50) : forecast(state, body as ForecastPayload);
   const runPath = path.match(/^\/forecasts\/(\d+)(\/export)?$/);
   if (runPath) { const run = runById(Number(runPath[1])); if (runPath[2]) return "date,forecast,lower,upper\r\n" + run.points.map(p => [p.date, p.forecast, p.lower, p.upper].join(",")).join("\r\n"); return run; }

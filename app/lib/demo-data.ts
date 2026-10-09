@@ -190,6 +190,7 @@ export const regions = [
 ];
 
 export const navItems = [
+  { id: "storytelling", label: "สรุปเพื่อวางแผน", caption: "Story Dashboard", icon: "spark", path: "/story-dashboard" },
   { id: "dashboard", label: "ภาพรวม", caption: "Dashboard", icon: "grid", path: "/dashboard" },
   { id: "forecast", label: "การพยากรณ์", caption: "Forecast", icon: "trend", path: "/forecast/new" },
   { id: "products", label: "สินค้า", caption: "Products", icon: "box", path: "/products" },

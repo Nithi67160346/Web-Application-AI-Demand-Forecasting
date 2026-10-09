@@ -71,6 +71,72 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(response.status_code, 201, response.text)
         return response.json()
 
+    def test_region_summary_and_replenishment_review_persist_without_changing_stock(self):
+        payload = self.file()
+        content = base64.b64decode(payload['content_base64']).decode()
+        content = content.replace(',100,10', ',100,1000')
+        southern = '\n'.join(line.replace('Bangkok,100,1000', 'South,200,5000') for line in content.splitlines()[1:])
+        payload['content_base64'] = base64.b64encode((content + southern + '\n').encode()).decode()
+        self.import_file(payload)
+        product = self.get('/products').json()[0]
+        product_path = f'/workspace/products/{product["id"]}'
+        self.client.put(product_path, headers=self.headers, json={**product, 'safety_stock': 100})
+        summary = self.get(f'/products/{product["id"]}/summary?region=Bangkok').json()
+        self.assertEqual(summary['recent_sales'], 3000)
+        self.assertEqual(summary['daily_average'], 100)
+        self.assertEqual(summary['inventory'][0]['inventory'], 1000)
+        self.assertEqual(len(summary['inventory']), 1)
+        south = self.get(f'/products/{product["id"]}/summary?region=South').json()
+        self.assertEqual(south['recent_sales'], 6000)
+        run = self.forecast()
+        plan = self.post('/replenishments', {'forecast_id': run['id'], 'incoming_units': 700, 'note': 'Confirmed incoming by horizon end'})
+        self.assertEqual(plan.status_code, 201, plan.text)
+        calculation = plan.json()['calculation']
+        self.assertEqual(calculation['recommended_units'], 1400)
+        self.assertEqual(calculation['reorder_point'], 1500)
+        self.assertTrue(calculation['urgent'])
+        self.assertEqual(self.get('/replenishments', self.other).json(), [])
+        review_path = f'/workspace/replenishments/{plan.json()["id"]}/review'
+        body = {'status': 'approved', 'note': 'Reviewed supply dates'}
+        self.assertEqual(self.client.put(review_path, headers=self.other, json=body).status_code, 404)
+        self.client.put('/workspace/members', headers=self.headers, json={'username': 'other1', 'role': 'viewer'})
+        shared = {**self.other, 'X-Workspace-ID': str(self.workspace)}
+        self.assertEqual(self.client.put(review_path, headers=shared, json=body).status_code, 403)
+        self.assertEqual(self.post('/replenishments', {'forecast_id': run['id'], 'note': 'viewer'}, shared).status_code, 403)
+        approved = self.client.put(review_path, headers=self.headers, json=body)
+        self.assertEqual(approved.status_code, 200, approved.text)
+        self.assertIsNotNone(approved.json()['reviewed_by'])
+        self.assertIsNotNone(approved.json()['reviewed_at'])
+        self.assertEqual(self.get('/replenishments').json()[0]['status'], 'approved')
+        self.assertEqual(self.client.put(review_path, headers=self.headers, json=body).status_code, 409)
+        self.assertEqual(self.get(f'/products/{product["id"]}/summary?region=Bangkok').json()['inventory'][0]['inventory'], 1000)
+        zero = self.post('/replenishments', {'forecast_id': run['id'], 'incoming_units': 5000, 'note': 'Supply covers horizon'})
+        self.assertEqual(zero.json()['calculation']['recommended_units'], 0)
+
+    def test_replenishment_rejects_stale_backdated_missing_stock_and_short_horizon(self):
+        self.import_file()
+        run = self.forecast()
+        request = {'forecast_id': run['id'], 'incoming_units': 0, 'note': 'Review'}
+        for incoming in [-1, 1.5, '10', True]:
+            self.assertEqual(self.post('/replenishments', {**request, 'incoming_units': incoming}).status_code, 422)
+        plan = self.post('/replenishments', request).json()
+        product = self.get('/products').json()[0]
+        self.client.put(f'/workspace/products/{product["id"]}', headers=self.headers, json={**product, 'safety_stock': 100})
+        self.assertTrue(self.get('/replenishments').json()[0]['stale'])
+        self.assertEqual(self.client.put(f'/workspace/replenishments/{plan["id"]}/review', headers=self.headers, json={'status': 'approved', 'note': 'Review'}).status_code, 409)
+        short = self.post('/forecasts', {'product_code': 'TK-A-001', 'region': 'Bangkok', 'horizon': 7}).json()
+        self.assertEqual(self.post('/replenishments', {**request, 'forecast_id': short['id']}).status_code, 409)
+        backdated = self.post('/forecasts', {'product_code': 'TK-A-001', 'region': 'Bangkok', 'horizon': 30, 'as_of': '2026-05-15'}).json()
+        self.assertEqual(self.post('/replenishments', {**request, 'forecast_id': backdated['id']}).status_code, 409)
+        self.import_file(self.file(days=1, offset=140))
+        self.assertEqual(self.post('/replenishments', request).status_code, 409)
+        no_stock = self.file().copy()
+        raw = base64.b64decode(no_stock['content_base64']).decode().replace(',100,10', ',100,')
+        no_stock['content_base64'] = base64.b64encode(raw.encode()).decode()
+        self.import_file(no_stock, mode='replace')
+        fresh = self.forecast()
+        self.assertEqual(self.post('/replenishments', {**request, 'forecast_id': fresh['id']}).status_code, 409)
+
     def test_atomic_invalid_import_and_idempotence(self):
         stage = self.post('/imports/validate', self.file(invalid=True)).json()
         self.assertEqual(stage['report']['invalid_rows'], 1)
