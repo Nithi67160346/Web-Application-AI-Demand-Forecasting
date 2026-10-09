@@ -307,6 +307,7 @@ class ForecastRequest(BaseModel):
     signals: list[Literal['disease', 'seasonality', 'policy', 'population']] = Field(default_factory=list, max_length=4)
     acknowledge_missing_days: bool = False
     as_of: date | None = None
+    model_mode: Literal['auto', 'ml', 'statistical'] = 'auto'
 
 
 class PlanRequest(BaseModel):
@@ -417,7 +418,7 @@ def run_forecast(payload: ForecastRequest, ctx=Depends(context)):
     if missing and not payload.acknowledge_missing_days:
         raise HTTPException(409, f'{missing} missing dates. Explicitly acknowledge zero filling before forecasting.')
     try:
-        result = forecast_series(rows, payload.horizon, list(dict.fromkeys(payload.signals)))
+        result = forecast_series(rows, payload.horizon, list(dict.fromkeys(payload.signals)), payload.model_mode)
     except ValueError as exc:
         raise HTTPException(422, str(exc)) from exc
     snapshot = next((item for item in inventory_snapshots(ctx, payload.product_code, rows[-1][0]) if item['region'] == payload.region), None)

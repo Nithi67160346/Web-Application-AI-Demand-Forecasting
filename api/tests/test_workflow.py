@@ -71,6 +71,24 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(response.status_code, 201, response.text)
         return response.json()
 
+    def test_ml_run_is_persisted_tenant_scoped_and_as_of_safe(self):
+        self.import_file()
+        ml = self.post('/forecasts', {'product_code': 'TK-A-001', 'region': 'Bangkok', 'horizon': 30, 'model_mode': 'ml'})
+        self.assertEqual(ml.status_code, 201, ml.text)
+        run = ml.json()
+        self.assertEqual(run['model'], 'ridge_lagged')
+        self.assertEqual(run['model_mode'], 'ml')
+        self.assertEqual(run['ml_artifact']['training_samples'], 112)
+        self.assertEqual(self.get(f'/forecasts/{run["id"]}').json()['ml_artifact'], run['ml_artifact'])
+        self.assertEqual(self.get(f'/forecasts/{run["id"]}', self.other).status_code, 404)
+        self.assertEqual(self.post('/forecasts', {'product_code': 'TK-A-001', 'region': 'Bangkok', 'horizon': 30, 'model_mode': 'other'}).status_code, 422)
+        future = self.file(days=7, offset=140)
+        self.import_file(future)
+        as_of = self.post('/forecasts', {'product_code': 'TK-A-001', 'region': 'Bangkok', 'horizon': 30, 'model_mode': 'ml', 'as_of': run['origin']})
+        self.assertEqual(as_of.status_code, 201, as_of.text)
+        self.assertEqual(as_of.json()['ml_artifact'], run['ml_artifact'])
+        self.assertEqual(as_of.json()['points'], run['points'])
+
     def test_region_summary_and_replenishment_review_persist_without_changing_stock(self):
         payload = self.file()
         content = base64.b64decode(payload['content_base64']).decode()

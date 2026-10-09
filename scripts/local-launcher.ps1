@@ -9,6 +9,7 @@ $stateFile=Join-Path $projectRoot '.cache\local-services.json'
 $python=Join-Path $projectRoot '.venv\Scripts\python.exe'
 $exitCode=0
 $sourceFiles=@(Get-ChildItem (Join-Path $projectRoot 'api\app\*.py')) + @(Get-ChildItem (Join-Path $projectRoot 'api\migrations\versions\*.py'))
+$sourceFiles+=@(Get-Item (Join-Path $projectRoot 'api\requirements.txt'))
 $sourceSignature=($sourceFiles|Sort-Object FullName|ForEach-Object{
     $hasher=[Security.Cryptography.SHA256]::Create()
     try{[BitConverter]::ToString($hasher.ComputeHash([IO.File]::ReadAllBytes($_.FullName)))}finally{$hasher.Dispose()}
@@ -37,7 +38,7 @@ function Setup {
         else{throw 'Python 3.10+ is required for Local mode. Install Python and rerun setup-local.cmd.'}
     }
     Checked $python @('-c','import sys;sys.exit(sys.version_info<(3,10))')
-    if(Get-Command uv -ErrorAction SilentlyContinue){Checked 'uv' @('pip','install','--python',$python,'-r',(Join-Path $projectRoot 'api\requirements-dev.txt'),'--cache-dir',(Join-Path $projectRoot '.cache\uv'))}
+    if(Get-Command uv -ErrorAction SilentlyContinue){Checked 'uv' @('pip','install','--python',$python,'-r',(Join-Path $projectRoot 'api\requirements-dev.txt'),'--no-cache','--link-mode','copy')}
     else{Checked $python @('-m','pip','install','-r',(Join-Path $projectRoot 'api\requirements-dev.txt'))}
     if(!(Test-Path (Join-Path $pgBin 'pg_ctl.exe'))){
         $env:npm_config_cache=Join-Path $projectRoot '.cache\npm'
@@ -109,6 +110,12 @@ try{
     elseif($Action -eq 'stop'){StopServices}
     else{
         if(!(Test-Path $python) -or !(Test-Path (Join-Path $projectRoot '.venv\Scripts\alembic.exe')) -or !(Test-Path (Join-Path $pgBin 'pg_ctl.exe')) -or !(Test-Path (Join-Path $projectRoot 'node_modules\.bin\vinext.cmd')) -or !(Test-Path (Join-Path $projectRoot '.env'))){Setup}
+        & $python -c "import importlib.metadata as m,sys; found={d.metadata['Name'].lower():d.version for d in m.distributions()}; sys.exit(not all(found.get(k)==v for k,v in {'scikit-learn':'1.7.2','numpy':'2.2.6','scipy':'1.15.3'}.items()))" 2>$null
+        if($LASTEXITCODE -ne 0){
+            Write-Host 'Installing ML dependencies for this application...' -ForegroundColor Cyan
+            if(Get-Command uv -ErrorAction SilentlyContinue){Checked 'uv' @('pip','install','--python',$python,'-r',(Join-Path $projectRoot 'api\requirements-dev.txt'),'--no-cache','--link-mode','copy')}
+            else{Checked $python @('-m','pip','install','-r',(Join-Path $projectRoot 'api\requirements-dev.txt'))}
+        }
         if(Test-Path $stateFile){
             $existing=Get-Content $stateFile -Raw|ConvertFrom-Json
             try{

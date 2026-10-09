@@ -1,9 +1,10 @@
 ## Demand forecasting workflow
 
 ระบบ Full-stack เชื่อม Upload → Validation → PostgreSQL → Forecast → Alerts/Review → Monitoring จริงแล้ว
-นำเข้า CSV/Excel ของคุณเองผ่านหน้าจอเดิม; โมเดลเป็น statistical forecasting ที่คำนวณจากยอดขายในฐานข้อมูล.
+นำเข้า CSV/Excel ของคุณเองผ่านหน้าจอเดิม; รองรับ Statistical Forecasting และ ML แบบ Ridge Regression
+ที่ฝึกจากยอดขายของสินค้า/พื้นที่ที่เลือก พร้อมเลือกเปรียบเทียบด้วย validation ตามลำดับเวลา.
 ดู [คู่มือใช้งาน](docs/USER-GUIDE.md), [ดูแลระบบ/backup/deployment](docs/OPERATIONS.md)
-และ [ผลทดสอบระบบ](docs/VALIDATION.md).
+และ [ผลทดสอบระบบ](docs/VALIDATION.md). รายละเอียดการฝึกและประเมิน ML อยู่ใน [ML model](docs/ML-MODEL.md).
 
 ทดลองออนไลน์: [Demandly interactive demo](https://nithi67160346.github.io/Web-Application-AI-Demand-Forecasting/).
 กด **เริ่มทดลองใช้งาน** แล้วนำเข้า CSV/XLSX ของคุณเอง หรือดาวน์โหลดไฟล์ตัวอย่างแล้วอัปโหลดผ่านหน้า Data.
@@ -12,8 +13,6 @@ Forecast คำนวณจากไฟล์จริง, Review และ Moni
 
 หาก Docker engine เปิดไม่ได้ ใช้ `setup-local.cmd` แล้ว `start-local.cmd`
 เพื่อเปิดระบบเต็มกับ PostgreSQL แบบ Local; ปิดด้วย `stop-local.cmd`.
-
-ความคืบหน้า 80 %
 
 # Demandly — AI Demand Forecasting Platform
 
@@ -29,7 +28,7 @@ Forecast คำนวณจากไฟล์จริง, Review และ Moni
   <img src="architecture/technology-stack-diagram.png" alt="Demandly Technology Stack" width="900">
 </p>
 
-Frontend MVP สำหรับ persona Supply Chain Planner จาก User Journey และ
+ระบบวางแผน Demand สำหรับ Supply Chain Planner จาก User Journey และ
 Frontend Workflow ของ AI Demand Forecasting Platform
 
 ## สิ่งที่มีในโปรเจกต์
@@ -38,6 +37,8 @@ Frontend Workflow ของ AI Demand Forecasting Platform
 - Data onboarding: Upload CSV/Excel, Preview, Column mapping และ Data quality score
 - Forecast workspace: เลือก Product/Region และ 7–180 วัน คำนวณจากยอดขายที่นำเข้า และเก็บประวัติผลลัพธ์
 - Model evaluation: Validation MAE, Holdout WAPE, ช่วงความไม่แน่นอน และ Human review decision support
+- Machine Learning: Ridge Regression ใช้ lag 1/7/14/28 วัน ค่าเฉลี่ยย้อนหลัง วันในสัปดาห์ และแนวโน้ม
+  เลือก Auto / ML / Statistical, เก็บพารามิเตอร์ที่ฝึกกับผล Forecast และดาวน์โหลดโมเดล JSON ได้
 - Products: Product portfolio, Inventory health, Demand by region และ Product detail
 - Story Dashboard: สรุปยอดขายและ Forecast พร้อมหลักฐานในสินค้า/พื้นที่เดียวกัน และคำอธิบายสูตร
 - Replenishment planning: คำนวณจำนวนควรเติมจาก Forecast, Safety stock, สต็อกและสินค้ารอรับ
@@ -424,28 +425,26 @@ Demo URL ของโปรเจกต์:
 
 ในโหมดนี้:
 
-- Login ใช้ Username หรือ Email ใดก็ได้เพื่อเข้าหน้า Dashboard
-- Register สร้าง Demo user และจำข้อมูลไว้ใน browser
-- Forecast และข้อมูลธุรกิจเป็นข้อมูลจำลอง
-- การเปลี่ยนผู้ใช้จะเกิดเฉพาะใน browser เครื่องนั้น ไม่ได้สร้างข้อมูลใน PostgreSQL
+- กดเริ่มทดลองใช้งานเพื่อเข้า Workspace ของเบราว์เซอร์นี้
+- นำเข้า CSV/XLSX ของตัวเองและตรวจข้อมูลก่อนยืนยัน
+- Forecast ฝึกและคำนวณจากข้อมูลที่นำเข้า รวมถึง Ridge Regression สำหรับ ML
+- ประวัติ Forecast, โมเดล JSON, Alert review และแผนเติมสินค้าบันทึกใน IndexedDB
+- พื้นที่นี้ไม่มีบัญชีทีมร่วมกัน และไม่ได้บันทึกใน PostgreSQL
 
 ## วิธีทดลอง Demo ตามลำดับ
 
-1. เปิด `/login` แล้ว Login หรือกดสมัครสมาชิก
-2. ตรวจ KPI และ Alert จากหน้า Dashboard
-3. เข้า Data onboarding แล้วเลือกไฟล์ CSV/Excel เพื่อดู 4 ขั้นตอน
-4. เข้า Forecast setup เลือก Product, Region, Period และ External signals
-5. กด `Run Forecast` แล้วรอหน้าผลลัพธ์
-6. เปิด Explainable AI และไปดู High demand Alert
-7. กด `Mark as reviewed` เพื่อจำลอง Human review
-8. เปิด Product detail และ Monitoring เพื่อดู Stock cover, Model health และ Re-forecast loop
-9. ทดลอง Settings, เปลี่ยนรหัสผ่าน และ Logout
+1. เปิดหน้าเว็บแล้วกดเริ่มทดลองใช้งาน
+2. เข้า Data onboarding เลือกไฟล์ CSV/Excel ตรวจ mapping และยืนยันนำเข้า
+3. เข้า Forecast เลือกสินค้า Region ระยะ 7–180 วัน และวิธีเลือกโมเดล
+4. เลือก Machine Learning เพื่อใช้ Ridge โดยตรง หรือ Auto เพื่อเปรียบเทียบกับโมเดลสถิติ
+5. กด `Run Forecast`; ML ต้องมีประวัติอย่างน้อย 140 วันปฏิทินและ 56 วันที่มีข้อมูล
+6. ดู Validation MAE, Holdout WAPE และรายละเอียดโมเดล; ดาวน์โหลดโมเดล ML เป็น JSON ได้
+7. เปิด Product detail หรือ Story Dashboard เพื่อทบทวนสต็อกและบันทึกแผนเติมสินค้า
+8. เปิด Alerts/Monitoring เพื่อตรวจและทบทวนผลที่บันทึก
 
 ## จุดที่ควรพัฒนาต่อเมื่อนำไปใช้จริง
 
-- สร้าง API สำหรับ Upload, Preview, Column mapping และ Data quality
-- เปลี่ยน Demo data เป็นข้อมูลจาก PostgreSQL หรือ Forecast service
-- บันทึก Alert review และ Production decision ลงฐานข้อมูล
-- เพิ่ม role/permission สำหรับ Planner, Manager และ Admin
-- เพิ่ม pagination และ filter ที่เชื่อมกับ Backend จริง
-- เพิ่มการทดสอบ API, validation ไฟล์ และการจัดการ error แบบ production
+- Deploy ระบบ API/PostgreSQL บนบริการที่รองรับ backend และตั้ง HTTPS/backup
+- ประเมินโมเดลและแผนเติมสินค้ากับข้อมูลธุรกิจจริง พร้อมทดสอบโหลดตามจำนวนผู้ใช้
+- เชื่อมระบบจัดซื้อ/รับสินค้า หากต้องการให้แผนอนุมัติส่งคำสั่งและปรับสต็อกจริง
+- เพิ่ม features เช่นราคา โปรโมชั่น หรือวันหยุด เมื่อมีข้อมูลย้อนหลังที่ตรวจสอบได้

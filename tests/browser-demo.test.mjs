@@ -11,7 +11,8 @@ await mkdir(new URL("../.cache/", import.meta.url), { recursive: true });
 const modulePath = new URL("../.cache/browser-demo-test.mjs", import.meta.url);
 const compile = (source) => transpileModule(source, { compilerOptions: { module: ModuleKind.ESNext, target: ScriptTarget.ES2022 } }).outputText;
 await writeFile(new URL("../.cache/planning-test.mjs", import.meta.url), compile(await readFile(new URL("../app/lib/planning.ts", import.meta.url), "utf8")));
-await writeFile(modulePath, compile(await readFile(new URL("../app/lib/browser-demo.ts", import.meta.url), "utf8")).replace('"./planning"', '"./planning-test.mjs"'));
+await writeFile(new URL("../.cache/ml-forecasting-test.mjs", import.meta.url), compile(await readFile(new URL("../app/lib/ml-forecasting.ts", import.meta.url), "utf8")));
+await writeFile(modulePath, compile(await readFile(new URL("../app/lib/browser-demo.ts", import.meta.url), "utf8")).replace('"./planning"', '"./planning-test.mjs"').replace('"./ml-forecasting"', '"./ml-forecasting-test.mjs"'));
 const { BrowserDemo, parseCsv, exampleCsv } = await import(modulePath.href);
 const engine = () => new BrowserDemo(`test-${crypto.randomUUID()}`);
 const file = (text = exampleCsv(), filename = "sales.csv") => ({ filename, content_base64: Buffer.from(text).toString("base64") });
@@ -20,6 +21,66 @@ const imported = async (demo, payload = file(), mode = "append", acknowledge_dup
   return demo.request(`/imports/${job.id}/commit`, { mode, acknowledge_duplicates });
 };
 const run = (demo, extra = {}) => demo.request("/forecasts", { product_code: "SKU-001", region: "กรุงเทพฯ", horizon: 30, ...extra });
+
+const cycleFile = (count = 280, corruptHoldout = false) => file("sale_date,product_code,region,sales_quantity,inventory\r\n" + Array.from({ length: count }, (_, i) => {
+  const day = new Date(Date.UTC(2026, 0, 1) + i * 86400000).toISOString().slice(0, 10);
+  const quantity = [50, 150, 110, 90][i % 4] * (corruptHoldout && i >= count - 28 ? 20 : 1);
+  return `${day},SKU-001,กรุงเทพฯ,${quantity},1000`;
+}).join("\r\n"));
+
+test("ML learns nonweekly demand, compares baselines and persists its learned artifact", async () => {
+  const name = `ml-${crypto.randomUUID()}`, demo = new BrowserDemo(name); await imported(demo, cycleFile());
+  const auto = await run(demo), baseline = await run(demo, { model_mode: "statistical" });
+  assert.equal(auto.model, "ridge_lagged"); assert.equal(auto.model_type, "machine_learning");
+  assert.ok(auto.metrics.mae < baseline.metrics.mae / 5);
+  assert.equal(auto.ml_artifact.training_samples, 252);
+  assert.ok(auto.ml_artifact.coefficients.some(v => Math.abs(v) > .01));
+  const saved = await new BrowserDemo(name).request(`/forecasts/${auto.id}`);
+  assert.deepEqual(saved.ml_artifact, auto.ml_artifact);
+  const { predictArtifact, predictSavedArtifact } = await import(new URL("../.cache/ml-forecasting-test.mjs", import.meta.url).href);
+  const dates = Array.from({ length: 280 }, (_, i) => new Date(Date.UTC(2026, 0, 1) + i * 86400000).toISOString().slice(0, 10));
+  const predictions = predictArtifact(saved.ml_artifact, dates.map((_, i) => [50, 150, 110, 90][i % 4]), dates, 30);
+  assert.deepEqual(predictions.map(v => Number(v.toFixed(2))), auto.points.map(p => p.forecast));
+  assert.deepEqual(predictSavedArtifact(JSON.parse(JSON.stringify(saved.ml_artifact)),30),predictions);
+  assert.equal(auto.ml_artifact.training_end, auto.origin);
+});
+
+test("ML validation and recursive holdout predictions never read held-out actuals", async () => {
+  const original = engine(), changed = engine(); await imported(original, cycleFile()); await imported(changed, cycleFile(280, true));
+  const first = await run(original, { model_mode: "ml" }), shifted = await run(changed, { model_mode: "ml" });
+  assert.deepEqual(first.selection_mae, shifted.selection_mae); assert.deepEqual(first.ml_alpha_scores, shifted.ml_alpha_scores);
+  assert.deepEqual(first.backtest.map(p => p.forecast), shifted.backtest.map(p => p.forecast));
+  assert.ok(shifted.metrics.mae > first.metrics.mae);
+  assert.notEqual(first.ml_artifact.target_mean, shifted.ml_artifact.target_mean);
+  first.validation_windows.forEach(window => { assert.ok(window.train_end < window.validation_start); assert.ok(window.validation_end < first.holdout_start); });
+});
+
+test("ML modes handle short, zero and constant history explicitly", async () => {
+  const short = engine(); await imported(short, cycleFile(112));
+  const auto = await run(short); assert.equal(auto.ml_artifact, null); assert.ok(auto.ml_unavailable_reason);
+  await assert.rejects(run(short, { model_mode: "ml" }), /140/);
+  await assert.rejects(run(short, { model_mode: "unknown" }), /โหมด/);
+  for (const quantity of [0, 100, 2147483647]) {
+    const demo = engine();
+    await imported(demo, file(exampleCsv().replace(/,\d+,500/g, `,${quantity},500`)));
+    const ml = await run(demo, { model_mode: "ml", horizon: 180 });
+    assert.equal(ml.model_type, "machine_learning"); assert.equal(ml.total, quantity * 180);
+    assert.ok(ml.points.every(p => Number.isFinite(p.forecast) && p.forecast >= 0));
+    if (!quantity) assert.equal(ml.metrics.wape_percent, null);
+  }
+});
+
+test("browser training and 180-day recursive predictions match the scikit-learn reference", async () => {
+  const reference = JSON.parse(await readFile(new URL("./fixtures/ml-ridge-reference.json", import.meta.url), "utf8"));
+  const { fitRidge, predictArtifact } = await import(new URL("../.cache/ml-forecasting-test.mjs", import.meta.url).href);
+  for (const example of reference.cases) {
+    const artifact = fitRidge(example.values, example.days, example.alpha);
+    assert.equal(artifact.training_samples, example.artifact.training_samples);
+    assert.deepEqual(artifact.features, example.artifact.features);
+    const forecasts = predictArtifact(artifact, example.values, example.days, example.horizon);
+    forecasts.forEach((value, i) => assert.ok(Math.abs(value - example.predictions[i]) < 1e-6, `${example.name} day ${i}: ${value} != ${example.predictions[i]}`));
+  }
+});
 
 test("regional metrics and reviewed replenishment plans persist without changing inventory", async () => {
   const name = `planning-${crypto.randomUUID()}`, demo = new BrowserDemo(name);

@@ -92,3 +92,21 @@ CI workflow เพิ่มใน repository แล้ว; ผลบน GitHub �
   หรือมูลค่าธุรกิจที่ไม่มีหลักฐาน. WAPE เป็น error และไม่แปลงเป็นค่าความแม่นยำ 100 − WAPE.
 - การอนุมัติคือบันทึกแผน ไม่ส่งคำสั่งจัดซื้อ/ผลิตหรือเปลี่ยนสต็อก. ข้อมูลรอรับกรอกเอง
   สำหรับช่วง Forecast; ความเสี่ยงระหว่าง Lead time ยังใช้สต็อกจริงเพราะไม่มีวันรับรายคำสั่ง.
+
+## ตรวจเพิ่มเติม 2026-10-09: Machine Learning
+
+- ผ่าน 42 automated tests: API 28, browser workflow 12 และ rendered HTML 2;
+  ESLint, TypeScript และ production build ผ่าน.
+- เพิ่ม supervised Ridge Regression ที่เรียนรู้ 13 features จากข้อมูลของสินค้า/Region.
+  ทดสอบ temporal validation, hyperparameter selection และ holdout ที่ไม่รั่วเข้า lag/scaler;
+  รวม zero/constant/large demand, history cap, 180-day horizon, tenant isolation และ as-of.
+- Browser JavaScript ให้ recursive predictions 180 วันตรง reference จาก scikit-learn
+  ใน 3 รูปแบบภายใน 0.000001 ชิ้น; reference อยู่ใน `tests/fixtures/ml-ridge-reference.json`.
+- Native API/PostgreSQL: บัญชี QA แยกนำเข้าวงรอบ 4 วัน 280 แถว. Auto เลือก Ridge alpha 0.1,
+  validation MAE 0.012, holdout MAE/WAPE 0.01; baseline MAE/WAPE 30.
+  เป็นข้อมูลสังเคราะห์ที่มีรูปแบบชัดเจน ไม่อ้างว่าใช้กับธุรกิจแล้วได้ error เท่านี้.
+- โมเดลครั้งสุดท้ายฝึก 252 targets, เก็บ JSON ในผล Forecast. อ่านกลับจาก API ได้ตรงเดิม;
+  inference จาก JSON โดยไม่ fit ใหม่ได้ baseline 30 วันตรง Forecast ที่เก็บ.
+- Local browser เลือก ML และ Run Forecast ผ่านหน้าจอจริง เปิดรายละเอียดและดาวน์โหลด
+  JSON ได้ครบ 13 coefficients และ state ยอดขาย 28 วัน. หลักฐาน HTTP:
+  `docs/evidence/ml-verification.json`; วิธีใช้งานและข้อจำกัด: `docs/ML-MODEL.md`.

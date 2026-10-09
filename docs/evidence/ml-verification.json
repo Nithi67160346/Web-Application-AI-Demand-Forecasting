@@ -1,0 +1,30 @@
+{
+  "checked_on": "2026-10-09",
+  "runtime": "Native API with PostgreSQL 16.14",
+  "dataset": "Isolated synthetic 280-day four-day cycle, one product / region; not evidence of business accuracy",
+  "observed_days": 280,
+  "training_samples": 252,
+  "model": "ridge_lagged",
+  "model_version": "ridge-lag-v1",
+  "alpha": 0.1,
+  "selection_mae": {
+    "last_value": 30.0,
+    "weekday_mean": 30.0,
+    "linear_trend": 30.0,
+    "ridge_lagged": 0.012
+  },
+  "holdout": {
+    "mae": 0.01,
+    "wape_percent": 0.01,
+    "bias": -0.0
+  },
+  "statistical_holdout": {
+    "mae": 30.0,
+    "wape_percent": 30.0,
+    "bias": -10.0
+  },
+  "horizon": 30,
+  "forecast_total": 2999.97,
+  "saved_model_reproduced": true,
+  "database_readback_equal": true
+}
