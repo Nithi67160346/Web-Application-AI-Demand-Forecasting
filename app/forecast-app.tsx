@@ -5,6 +5,8 @@ import type { ChangeEvent, DragEvent, FormEvent } from "react";
 import { ForecastChart } from "./components/ForecastChart";
 import { LiveWorkspace, type LiveMeta } from "./components/LiveWorkspace";
 import { isStaticDemo } from "./lib/api";
+import { ThemeToggle } from "./components/workspace-ui";
+import { Icon } from "./components/icons";
 import {
   changePassword as apiChangePassword,
   checkUsername,
@@ -77,39 +79,7 @@ const pageMeta: Record<AppView, { title: string; eyebrow: string }> = {
   register: { title: "สร้างบัญชี", eyebrow: "Create account" },
 };
 
-const iconGlyphs: Record<string, string> = {
-  grid: "▦",
-  trend: "⌁",
-  box: "◫",
-  bell: "♢",
-  database: "◉",
-  pulse: "⌁",
-  settings: "⚙",
-  help: "?",
-  search: "⌕",
-  calendar: "▣",
-  arrow: "↗",
-  upload: "↑",
-  check: "✓",
-  spark: "✦",
-  filter: "≡",
-  download: "↓",
-  chevron: "›",
-  close: "×",
-  plus: "+",
-  refresh: "↻",
-  shield: "◇",
-  menu: "☰",
-  lock: "⌑",
-};
 
-function Icon({ name, className = "" }: { name: string; className?: string }) {
-  return (
-    <span className={`icon icon-${name} ${className}`} aria-hidden="true">
-      {iconGlyphs[name] ?? "•"}
-    </span>
-  );
-}
 
 function viewFromPath(path: string): AppView {
   if (path.startsWith("/story-dashboard")) return "storytelling";
@@ -165,11 +135,13 @@ function TrendValue({ value }: { value: number }) {
   );
 }
 
+/** Brand wordmark from public/brand; its white letters assume a dark backdrop (sidebar, login). */
 function AppLogo({ light = false }: { light?: boolean }) {
   return (
     <span className={`app-logo ${light ? "app-logo-light" : ""}`}>
-      <span className="app-logo-mark"><i /><i /><i /></span>
-      <span className="app-logo-word">demandly</span>
+      {/* Static Pages export has no image optimizer; the file is already sized WebP. */}
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img className="brand-logo" src={`${APP_BASE_PATH}/brand/demandly-logo.webp`} alt="Demandly" width={770} height={160} />
     </span>
   );
 }
@@ -332,6 +304,7 @@ function Topbar({
             </div>
           )}
         </div>
+        <ThemeToggle />
         <button className="icon-button topbar-icon help-button" aria-label="ช่วยเหลือ" onClick={() => onNavigate("/settings?section=help")}><Icon name="help" /></button>
         <button className="profile-trigger" onClick={() => onNavigate("/settings")} type="button"><span className="user-avatar">{(userLabel || "ผู้ใช้งาน").charAt(0).toUpperCase()}</span><span>{userLabel || "ผู้ใช้งาน"}</span><span className="profile-chevron">⌄</span></button>
       </div>
@@ -1055,7 +1028,7 @@ export function ForecastApp({ initialView, initialPath }: ForecastAppProps) {
 
   const isPublicView = view === "login" || view === "register";
   if (!isPublicView && !authReady) return <AuthCheckingView />;
-  if (isStaticDemo && isPublicView) return <AuthScene variant="login"><div className="auth-panel"><span className="panel-kicker">INTERACTIVE DEMO</span><h1>ทดลองใช้งาน Demandly</h1><p>นำเข้า CSV หรือ Excel ของคุณเอง แล้วทดลอง Forecast, Alerts และ Monitoring บนหน้าจอเดิม</p><p>ข้อมูลบันทึกเฉพาะเบราว์เซอร์นี้ ไม่ต้องสมัครบัญชีหรือใช้รหัสผ่าน และไม่ใช่พื้นที่ทำงานร่วมกันของทีม</p><Button disabled={authLoading} onClick={()=>void handleLogin({username_or_email:"demo",password:""})} icon="arrow">{authLoading?"กำลังเปิดพื้นที่ทำงาน...":"เริ่มทดลองใช้งาน"}</Button>{authError&&<p className="auth-error" role="alert">{authError}</p>}</div></AuthScene>;
+  if (isStaticDemo && isPublicView) return <AuthScene variant="login"><div className="login-card demo-card"><div className="login-card-heading"><span className="login-card-icon"><Icon name="spark" /></span><div><span className="panel-kicker">INTERACTIVE DEMO</span><h1>ทดลองใช้งาน Demandly</h1></div></div><p>นำเข้า CSV หรือ Excel ของคุณเอง แล้วทดลอง Forecast, Alerts และ Monitoring บนหน้าจอเดิม</p><ul className="demo-points"><li><Icon name="database" />นำเข้าไฟล์ยอดขายของคุณเองได้ทันที</li><li><Icon name="trend" />Forecast ด้วย ML และโมเดลสถิติ พร้อมผลทดสอบย้อนหลัง</li><li><Icon name="shield" />ข้อมูลอยู่ในเบราว์เซอร์นี้เท่านั้น</li></ul><p className="demo-note">ข้อมูลบันทึกเฉพาะเบราว์เซอร์นี้ ไม่ต้องสมัครบัญชีหรือใช้รหัสผ่าน และไม่ใช่พื้นที่ทำงานร่วมกันของทีม</p><Button disabled={authLoading} onClick={()=>void handleLogin({username_or_email:"demo",password:""})} icon="arrow">{authLoading?"กำลังเปิดพื้นที่ทำงาน...":"เริ่มทดลองใช้งาน"}</Button>{authError&&<p className="auth-error" role="alert">{authError}</p>}</div></AuthScene>;
   if (view === "login") return <LoginView onLogin={handleLogin} onRegister={() => { setAuthError(""); navigate("/register"); }} isLoading={authLoading} error={authError} />;
   if (view === "register") return <RegisterView onRegister={handleRegister} onLogin={() => { setAuthError(""); navigate("/login"); }} isLoading={authLoading} error={authError} />;
   if (!authUser) return <LoginView onLogin={handleLogin} onRegister={() => { setAuthError(""); navigate("/register"); }} isLoading={authLoading} error={authError} />;

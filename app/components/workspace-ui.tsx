@@ -1,41 +1,31 @@
+import { useSyncExternalStore } from "react";
 import type { ReactNode } from "react";
 import type { RiskLevel } from "../lib/demo-data";
-const iconGlyphs: Record<string, string> = {
-  grid: "▦",
-  trend: "⌁",
-  box: "◫",
-  bell: "♢",
-  database: "◉",
-  pulse: "⌁",
-  settings: "⚙",
-  help: "?",
-  search: "⌕",
-  calendar: "▣",
-  arrow: "↗",
-  upload: "↑",
-  check: "✓",
-  spark: "✦",
-  filter: "≡",
-  download: "↓",
-  chevron: "›",
-  close: "×",
-  plus: "+",
-  refresh: "↻",
-  shield: "◇",
-  menu: "☰",
-  lock: "⌑",
-};
+import { Icon } from "./icons";
 function riskLabel(risk: RiskLevel) {
   if (risk === "HIGH") return "สูง";
   if (risk === "MEDIUM") return "กลาง";
   return "ต่ำ";
 }
-export function Icon({ name, className = "" }: { name: string; className?: string }) {
-  return (
-    <span className={`icon icon-${name} ${className}`} aria-hidden="true">
-      {iconGlyphs[name] ?? "•"}
-    </span>
-  );
+export { Icon };
+
+/** Switches data-theme on <html>; layout.tsx restores the saved choice before paint. */
+const subscribeTheme = (onChange: () => void) => {
+  const observer = new MutationObserver(onChange);
+  observer.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+  return () => observer.disconnect();
+};
+const readTheme = () => document.documentElement.dataset.theme === "light" ? "light" : "dark";
+
+export function ThemeToggle() {
+  const theme = useSyncExternalStore(subscribeTheme, readTheme, () => "dark");
+  function toggle() {
+    const next = theme === "dark" ? "light" : "dark";
+    document.documentElement.dataset.theme = next;
+    try { localStorage.setItem("demandly-theme", next); } catch { /* storage may be blocked; theme still applies */ }
+  }
+  const label = theme === "dark" ? "เปลี่ยนเป็นธีมสว่าง" : "เปลี่ยนเป็นธีมมืด";
+  return <button type="button" className="icon-button topbar-icon theme-toggle" onClick={toggle} aria-label={label} title={label}><Icon name={theme === "dark" ? "sun" : "moon"} /></button>;
 }
 
 export function PageIntro({
