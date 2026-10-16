@@ -110,3 +110,15 @@ CI workflow เพิ่มใน repository แล้ว; ผลบน GitHub �
 - Local browser เลือก ML และ Run Forecast ผ่านหน้าจอจริง เปิดรายละเอียดและดาวน์โหลด
   JSON ได้ครบ 13 coefficients และ state ยอดขาย 28 วัน. หลักฐาน HTTP:
   `docs/evidence/ml-verification.json`; วิธีใช้งานและข้อจำกัด: `docs/ML-MODEL.md`.
+
+## ตรวจเพิ่มเติม 2026-10-16: นโยบายสั่งเติมและยอดขายไม่สม่ำเสมอ
+
+- Lint, TypeScript, build และ rendered HTML 2 tests ผ่าน; API ผ่าน 33 tests; browser demo ผ่าน 13 tests.
+- จำนวนแนะนำใช้ยอดขายคาดการณ์ใน Lead time + รอบการสั่งซื้อ ไม่ใช่ทั้งระยะ Forecast:
+  ขายวันละ 100, 14 + 7 วัน, Safety stock 100, สต็อก 1,000, รอรับ 700 → 500 ชิ้น (สูตรเดิมได้ 1,400).
+- Safety stock จาก RMSE ของ holdout ตรงกับ z × RMSE × √(L+R) ทั้ง API และ browser;
+  เปลี่ยนระดับการบริการเป็น 99% ทำให้แผนเดิมเป็นข้อมูลเปลี่ยนแล้วและ Safety stock เพิ่มขึ้น.
+- ยอดขายไม่สม่ำเสมอ (ขายประมาณ 20% ของวัน): MAE อย่างเดียวเลือก last value ที่ทายศูนย์;
+  Validation score = MAE + |Bias| ไม่เลือกโมเดลนั้นและเพิ่ม Croston SBA เป็นตัวเลือก.
+  Python และ browser ให้คะแนนทุกโมเดลและยอด Forecast ตรงกันบนข้อมูลชุดเดียวกัน.
+- Migration `0004_inventory_policy` upgrade บน SQLite ชั่วคราวผ่าน; ยังไม่ได้ทดสอบกับ PostgreSQL Local.

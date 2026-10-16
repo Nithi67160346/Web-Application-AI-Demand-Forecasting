@@ -257,7 +257,8 @@ def dashboard(ctx=Depends(context)):
 
 @router.get('/products')
 def product_list(ctx=Depends(context)):
-    return [{'id': p.id, 'code': p.code, 'name': p.name, 'lead_time_days': p.lead_time_days, 'safety_stock': p.safety_stock}
+    return [{'id': p.id, 'code': p.code, 'name': p.name, 'lead_time_days': p.lead_time_days, 'safety_stock': p.safety_stock,
+             'review_period_days': p.review_period_days, 'service_level_percent': p.service_level_percent}
             for p in ctx[3].scalars(select(ProductRecord).where(ProductRecord.workspace_id == ctx[0].id).order_by(ProductRecord.code))]
 
 
@@ -265,6 +266,9 @@ class ProductUpdate(BaseModel):
     name: str = Field(min_length=1, max_length=120)
     lead_time_days: int = Field(ge=1, le=365)
     safety_stock: int = Field(ge=0, le=2147483647)
+    # Optional so older clients that omit them keep the saved policy.
+    review_period_days: int | None = Field(default=None, ge=1, le=365)
+    service_level_percent: Literal[90, 95, 98, 99] | None = None
 
 
 @router.put('/products/{product_id}')
@@ -272,7 +276,7 @@ def update_product(product_id: int, payload: ProductUpdate, ctx=Depends(context)
     authorize(ctx)
     ctx[3].scalar(select(Workspace).where(Workspace.id == ctx[0].id).with_for_update().execution_options(populate_existing=True))
     product = owned(ProductRecord, product_id, ctx)
-    for key, value in payload.model_dump().items():
+    for key, value in payload.model_dump(exclude_none=True).items():
         setattr(product, key, value)
     audit(ctx, 'product.updated', product.code)
     ctx[3].commit()
@@ -321,6 +325,23 @@ class PlanReview(BaseModel):
     note: str = Field(min_length=1, max_length=2000)
 
 
+# One-sided normal quantiles for the allowed cycle service levels.
+SERVICE_LEVEL_Z = {90: 1.2816, 95: 1.6449, 98: 2.0537, 99: 2.3263}
+
+
+def safety_stock_policy(result, product):
+    """Safety stock from holdout forecast error over lead time + review period, never below the manual minimum."""
+    protection_days = product.lead_time_days + product.review_period_days
+    errors = [(p['actual'] - p['forecast']) ** 2 for p in result['backtest']]
+    rmse = math.sqrt(sum(errors) / len(errors)) if errors else 0.0
+    z = SERVICE_LEVEL_Z[product.service_level_percent]
+    # Assumes independent daily errors; RMSE already includes holdout bias.
+    statistical = math.ceil(z * rmse * math.sqrt(protection_days))
+    return {'protection_days': protection_days, 'forecast_error_rmse': round(rmse, 3), 'z_score': z,
+            'safety_stock_minimum': product.safety_stock, 'safety_stock_statistical': statistical,
+            'safety_stock': max(product.safety_stock, statistical)}
+
+
 def planning_calculation(ctx, run, incoming):
     workspace = ctx[0]
     if run.data_version != workspace.data_version or run.data_generation != workspace.data_generation:
@@ -333,16 +354,24 @@ def planning_calculation(ctx, run, incoming):
     if not stock or stock['sale_date'].isoformat() != result['origin']:
         raise HTTPException(409, 'Import an inventory snapshot at the latest sales date before planning.')
     product = ctx[3].scalar(select(ProductRecord).where(ProductRecord.workspace_id == workspace.id, ProductRecord.code == run.product_code))
-    if product is None or product.lead_time_days > result['horizon']:
-        raise HTTPException(409, 'Forecast horizon must cover the product lead time.')
+    if product is None:
+        raise HTTPException(409, 'Product not found for this forecast.')
+    policy = safety_stock_policy(result, product)
+    if policy['protection_days'] > result['horizon']:
+        raise HTTPException(409, f'Forecast horizon must cover lead time plus review period ({policy["protection_days"]} days).')
+    # Periodic review: order up to demand over lead time + review period plus safety stock.
     lead_demand = sum(p['forecast'] for p in result['points'][:product.lead_time_days])
+    protection_demand = sum(p['forecast'] for p in result['points'][:policy['protection_days']])
+    safety = policy['safety_stock']
     return {'product_code': run.product_code, 'region': run.region, 'origin': result['origin'],
             'horizon': result['horizon'], 'forecast_total': result['total'], 'on_hand': stock['inventory'],
             'snapshot_date': stock['sale_date'].isoformat(), 'incoming_units': incoming,
-            'safety_stock': product.safety_stock, 'lead_time_days': product.lead_time_days,
-            'lead_time_demand': lead_demand, 'reorder_point': math.ceil(lead_demand + product.safety_stock),
-            'recommended_units': max(0, math.ceil(result['total'] + product.safety_stock - stock['inventory'] - incoming)),
-            'urgent': stock['inventory'] < lead_demand + product.safety_stock,
+            **policy, 'lead_time_days': product.lead_time_days, 'review_period_days': product.review_period_days,
+            'service_level_percent': product.service_level_percent,
+            'lead_time_demand': round(lead_demand, 2), 'protection_demand': round(protection_demand, 2),
+            'reorder_point': math.ceil(lead_demand + safety), 'order_up_to_level': math.ceil(protection_demand + safety),
+            'recommended_units': max(0, math.ceil(protection_demand + safety - stock['inventory'] - incoming)),
+            'urgent': stock['inventory'] < lead_demand + safety,
             'data_version': workspace.data_version, 'data_generation': workspace.data_generation}
 
 
@@ -350,7 +379,10 @@ def serialize_plan(plan, ctx):
     calculation = plan.calculation
     product = ctx[3].scalar(select(ProductRecord).where(ProductRecord.workspace_id == ctx[0].id, ProductRecord.code == calculation['product_code']))
     stale = (calculation['data_version'] != ctx[0].data_version or calculation['data_generation'] != ctx[0].data_generation
-             or product is None or product.lead_time_days != calculation['lead_time_days'] or product.safety_stock != calculation['safety_stock'])
+             or product is None or product.lead_time_days != calculation['lead_time_days']
+             or product.safety_stock != calculation.get('safety_stock_minimum')
+             or product.review_period_days != calculation.get('review_period_days')
+             or product.service_level_percent != calculation.get('service_level_percent'))
     return {'id': plan.id, 'forecast_id': plan.forecast_id, 'calculation': calculation, 'status': plan.status,
             'note': plan.note, 'created_by': plan.created_by, 'created_at': plan.created_at.isoformat(),
             'reviewed_by': plan.reviewed_by, 'reviewed_at': plan.reviewed_at.isoformat() if plan.reviewed_at else None,
@@ -442,7 +474,7 @@ def run_forecast(payload: ForecastRequest, ctx=Depends(context)):
                            kind='demand_change', message=f'{payload.product_code} / {payload.region}: demand change {result["change_percent"]}%.'))
     if snapshot and product:
         daily_demand = result['total'] / payload.horizon
-        needed = daily_demand * product.lead_time_days + product.safety_stock
+        needed = daily_demand * product.lead_time_days + safety_stock_policy(result, product)['safety_stock']
         if snapshot['inventory'] < needed:
             db.add(AlertRecord(workspace_id=workspace.id, forecast_id=run.id, level='HIGH', kind='stock_risk',
                                message=f'Stock snapshot {snapshot["inventory"]} on {snapshot["sale_date"]}; estimated lead-time demand + safety stock {needed:.0f}. Verify snapshot freshness before acting.'))

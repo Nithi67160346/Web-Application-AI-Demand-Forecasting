@@ -89,13 +89,16 @@ test("regional metrics and reviewed replenishment plans persist without changing
   const south = lines.slice(1).map(line => line.replace("กรุงเทพฯ", "South").replace(/,\d+,500$/, ",200,5000")).join("\r\n");
   await imported(demo, file(sales + "\r\n" + south));
   const product = (await demo.request("/products"))[0];
-  await demo.request(`/products/${product.id}`, { ...product, safety_stock: 100 }, "PUT");
+  assert.equal(product.review_period_days, 7); assert.equal(product.service_level_percent, 95);
+  await demo.request(`/products/${product.id}`, { ...product, safety_stock: 100, review_period_days: 14 }, "PUT");
   const summary = await demo.request(`/products/${product.id}/summary?region=South`);
   assert.equal(summary.recent_sales, 6000); assert.equal(summary.daily_average, 200);
   assert.equal(summary.inventory.length, 1); assert.equal(summary.inventory[0].inventory, 5000);
   const forecast = await run(demo, { region: "South" });
-  const plan = await demo.request("/replenishments", { forecast_id: forecast.id, incoming_units: 700, note: "Confirmed deliveries within horizon" });
-  assert.equal(plan.calculation.recommended_units, 400);
+  const plan = await demo.request("/replenishments", { forecast_id: forecast.id, incoming_units: 300, note: "Confirmed deliveries within horizon" });
+  // 28 days (lead time 14 + review 14) x 200 + safety 100 - stock 5000 - incoming 300.
+  assert.equal(plan.calculation.protection_days, 28); assert.equal(plan.calculation.safety_stock_statistical, 0);
+  assert.equal(plan.calculation.recommended_units, 400); assert.equal(plan.calculation.order_up_to_level, 5700);
   assert.equal(plan.calculation.reorder_point, 2900);
   assert.equal(plan.calculation.urgent, false);
   const review = await demo.request(`/replenishments/${plan.id}/review`, { status: "approved", note: "Checked supply dates" }, "PUT");
@@ -220,4 +223,29 @@ test("Excel uses first worksheet, real date cells, mapping and numeric zero", as
   const job = await imported(demo, payload); assert.equal(job.report.valid_rows, 1);
   const records = (await demo.request("/sales/query")).items;
   assert.equal(records[0].sales_quantity, 0); assert.equal(records[0].inventory, 0);
+});
+
+const dailyCsv = (count, start, quantity) => file("sale_date,product_code,region,sales_quantity,inventory\r\n" + Array.from({ length: count }, (_, i) => `${new Date(Date.parse(start) + i * 86400000).toISOString().slice(0, 10)},SKU-001,กรุงเทพฯ,${quantity(i)},500`).join("\r\n"));
+
+test("safety stock follows forecast error and service level; intermittent demand is not forecast as zero", async () => {
+  const demo = engine(); await imported(demo, dailyCsv(140, "2026-01-01", i => 80 + (i * 37) % 41));
+  const product = (await demo.request("/products"))[0], forecast = await run(demo);
+  const request = { forecast_id: forecast.id, incoming_units: 0, note: "Weekly review" };
+  const first = (await demo.request("/replenishments", request)).calculation;
+  const rmse = Math.sqrt(forecast.backtest.reduce((s, p) => s + (p.actual - p.forecast) ** 2, 0) / forecast.backtest.length);
+  assert.ok(first.safety_stock_statistical > 0); assert.equal(first.safety_stock_statistical, Math.ceil(1.6449 * rmse * Math.sqrt(21)));
+  await demo.request(`/products/${product.id}`, { ...product, service_level_percent: 99 }, "PUT");
+  assert.equal((await demo.request("/replenishments"))[0].stale, true);
+  assert.ok((await demo.request("/replenishments", request)).calculation.safety_stock > first.safety_stock);
+  await assert.rejects(demo.request(`/products/${product.id}`, { ...product, service_level_percent: 97 }, "PUT"), /ระดับการบริการ/);
+  await demo.request(`/products/${product.id}`, { name: product.name, lead_time_days: 14, safety_stock: 0 }, "PUT");
+  assert.equal((await demo.request("/products"))[0].service_level_percent, 99);
+  assert.equal((await run(demo, { model_mode: "statistical" })).demand_pattern, "smooth");
+
+  let seed = 7; const random = () => (seed = (seed * 48271) % 2147483647) / 2147483647;
+  const sparse = engine(); await imported(sparse, dailyCsv(300, "2025-01-01", () => random() < .2 ? 10 + Math.floor(random() * 41) : 0));
+  const intermittent = await run(sparse, { model_mode: "statistical" });
+  assert.equal(intermittent.demand_pattern, "intermittent"); assert.ok("croston_sba" in intermittent.selection_score);
+  assert.ok(intermittent.total > 0);
+  Object.entries(intermittent.selection_score).forEach(([model, score]) => assert.ok(score >= intermittent.selection_mae[model]));
 });

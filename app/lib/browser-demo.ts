@@ -1,6 +1,6 @@
 import { unzipSync, strFromU8 } from "fflate";
 import type { Alert, Inventory, Job, Product, Run, Workspace, Replenishment } from "./workspace-types";
-import { calculatePlanning } from "./planning";
+import { calculatePlanning, safetyStockPolicy, SERVICE_LEVELS } from "./planning";
 import { fitRidge, predictArtifact, predictRidge, MIN_ML_HISTORY, ML_ALPHAS } from "./ml-forecasting";
 
 type Sale = { sale_date: string; product_code: string; region: string; sales_quantity: number; inventory: number | null };
@@ -17,6 +17,11 @@ const round = (v: number, digits = 2) => Number(v.toFixed(digits));
 const plusDay = (day: string, amount: number) => new Date(Date.parse(day) + amount * DAY).toISOString().slice(0, 10);
 const now = () => new Date().toISOString();
 function requireValue(condition: unknown, message: string): asserts condition { if (!condition) throw new Error(message); }
+// Products saved before inventory policies existed get the same defaults as server migration 0004.
+function withPolicyDefaults(state: DemoState): DemoState {
+  for (const product of state.products) { product.review_period_days ??= 7; product.service_level_percent ??= 95; }
+  return state;
+}
 function emptyState(): DemoState {
   return { workspace: { id: 1, name: "Demandly Workspace", role: "owner", data_version: 0, settings: {}, workspaces: [] }, generation: 0, sales: [], products: [], jobs: [], runs: [], alerts: [], events: [], nextId: 1 };
 }
@@ -42,7 +47,7 @@ export class BrowserDemo {
       const store = transaction.objectStore("workspace");
       const read = store.get("current"); let result: T; let failure: unknown;
       read.onsuccess = () => {
-        try { const state: DemoState = read.result ?? emptyState(); result = work(state); if (write) store.put(state, "current"); }
+        try { const state = withPolicyDefaults(read.result ?? emptyState()); result = work(state); if (write) store.put(state, "current"); }
         catch (error) { failure = error; transaction.abort(); }
       };
       transaction.oncomplete = () => resolve(result);
@@ -170,8 +175,19 @@ function totals(state: DemoState, field: "product_code" | "region") {
 }
 function audit(state: DemoState, action: string, detail: string) { state.events.unshift({ action, detail, created_at: now() }); state.events = state.events.slice(0, 100); }
 const metrics = (actual: number[], forecast: number[]) => ({ mae: round(mean(actual.map((v, i) => Math.abs(v - forecast[i]))), 3), wape_percent: actual.some(Boolean) ? round(actual.reduce((sum, v, i) => sum + Math.abs(v - forecast[i]), 0) / actual.reduce((a, b) => a + b, 0) * 100, 3) : null, bias: round(mean(actual.map((v, i) => forecast[i] - v)), 3) });
+// Same intermittent-demand rules as api/app/forecasting.py.
+const demandPattern = (values: number[]) => { const nonzero = values.filter(v => v > 0).length; return nonzero && values.length / nonzero >= 1.32 ? "intermittent" : "smooth"; };
+function crostonSba(values: number[], horizon: number, alpha = 0.1) {
+  const first = values.findIndex(v => v > 0); if (first < 0) return Array(horizon).fill(0) as number[];
+  let size = values[first], interval = first + 1, since = 1;
+  for (const value of values.slice(first + 1)) { if (value > 0) { size += alpha * (value - size); interval += alpha * (since - interval); since = 1; } else since++; }
+  return Array(horizon).fill((1 - alpha / 2) * size / interval) as number[];
+}
+/** MAE alone rewards forecasting zero for intermittent demand; |bias| penalises under-forecasting totals. */
+const selectionScore = (actual: number[], forecast: number[]) => { const errors = actual.map((v, i) => forecast[i] - v); const mae = mean(errors.map(Math.abs)); return { score: mae + Math.abs(mean(errors)), mae }; };
 function predict(values: number[], days: string[], horizon: number, model: string, alpha = 1) {
   if (model === "ridge_lagged") return predictRidge(values, days, horizon, alpha);
+  if (model === "croston_sba") return crostonSba(values, horizon);
   if (model === "last_value") return Array(horizon).fill(values.at(-1)) as number[];
   if (model === "annual_seasonal") { const scale = Math.min(2, Math.max(.5, values.slice(-28).reduce((a, b) => a + b, 0) / Math.max(1, values.slice(-393, -365).reduce((a, b) => a + b, 0)))); return Array.from({ length: horizon }, (_, i) => Math.max(0, values[(values.length + i - 365) % values.length] * scale)); }
   const window = values.slice(-56); const n = window.length, mid = (n - 1) / 2, avg = mean(window);
@@ -189,29 +205,34 @@ function forecast(state: DemoState, payload: ForecastPayload): SavedRun {
   requireValue(span === rows.length || payload.acknowledge_missing_days, `ขาดข้อมูล ${span - rows.length} วัน กรุณายืนยันการเติมศูนย์`);
   const observed = new Map(rows.map(r => [r.date, r.actual])); const days = Array.from({ length: span }, (_, i) => plusDay(rows[0].date, i)); const values = days.map(d => observed.get(d) ?? 0);
   requireValue(mode !== "ml" || span >= MIN_ML_HISTORY, "ML ต้องมีอย่างน้อย 140 วันปฏิทินและ 56 วันที่มีรายการ เพิ่มประวัติหรือเลือกโหมดอัตโนมัติ/โมเดลเดิม");
-  const models = ["last_value", "weekday_mean", "linear_trend", ...(span >= 449 ? ["annual_seasonal"] : [])];
-  const validationScore = (model: string, alpha = 1) => mean([84, 56].map(offset => { const split = span - offset; const estimates = predict(values.slice(0, split), days.slice(0, split), 28, model, alpha); return mean(values.slice(split, split + 28).map((v, i) => Math.abs(v - estimates[i]))); }));
-  const rawScores = Object.fromEntries(models.map(model => [model, validationScore(model)]));
+  // Pattern uses pre-holdout history only, so the holdout cannot change the candidate set.
+  const pattern = demandPattern(values.slice(0, -28));
+  const models = ["last_value", "weekday_mean", "linear_trend", ...(span >= 449 ? ["annual_seasonal"] : []), ...(pattern === "intermittent" ? ["croston_sba"] : [])];
+  const validation = (model: string, alpha = 1) => { const folds = [84, 56].map(offset => { const split = span - offset; return selectionScore(values.slice(split, split + 28), predict(values.slice(0, split), days.slice(0, split), 28, model, alpha)); }); return { score: mean(folds.map(f => f.score)), mae: mean(folds.map(f => f.mae)) }; };
+  const results = Object.fromEntries(models.map(model => [model, validation(model)]));
   const alphaScores: Record<string, number> = {}; let selectedAlpha: number | undefined;
   if (mode !== "statistical" && span >= MIN_ML_HISTORY) {
-    ML_ALPHAS.forEach(alpha => { alphaScores[String(alpha)] = validationScore("ridge_lagged", alpha); });
+    const alphaResults = Object.fromEntries(ML_ALPHAS.map(alpha => [String(alpha), validation("ridge_lagged", alpha)]));
+    ML_ALPHAS.forEach(alpha => { alphaScores[String(alpha)] = alphaResults[String(alpha)].score; });
     selectedAlpha = ML_ALPHAS.reduce((best, alpha) => alphaScores[String(alpha)] < alphaScores[String(best)] ? alpha : best);
-    models.push("ridge_lagged"); rawScores.ridge_lagged = alphaScores[String(selectedAlpha)];
+    models.push("ridge_lagged"); results.ridge_lagged = alphaResults[String(selectedAlpha)];
   }
+  const rawScores = Object.fromEntries(Object.entries(results).map(([model, r]) => [model, r.score]));
   const scores = Object.fromEntries(Object.entries(rawScores).map(([model, score]) => [model, round(score, 3)]));
+  const maeScores = Object.fromEntries(Object.entries(results).map(([model, r]) => [model, round(r.mae, 3)]));
   const chosen = mode === "ml" ? "ridge_lagged" : models.reduce((best, model) => rawScores[model] < rawScores[best] ? model : best);
   const heldout = predict(values.slice(0, -28), days.slice(0, -28), 28, chosen, selectedAlpha); const evaluation = metrics(values.slice(-28), heldout);
   const residuals = values.slice(-28).map((v, i) => Math.abs(v - heldout[i])).sort((a, b) => a - b); const width = residuals[Math.ceil(.95 * residuals.length) - 1];
   const artifact = selectedAlpha === undefined ? null : fitRidge(values, days, selectedAlpha);
   const origin = days.at(-1)!; const estimates = chosen === "ridge_lagged" ? predictArtifact(artifact!, values, days, horizon) : predict(values, days, horizon, chosen); const points = estimates.map((value, i) => { const uncertainty = width * Math.sqrt(1 + i / 28); return { date: plusDay(origin, i + 1), forecast: round(value), baseline: round(value), lower: round(Math.max(0, value - uncertainty)), upper: round(value + uncertainty) }; });
-  const recent = mean(values.slice(-28)); const run: SavedRun = { id: state.nextId++, product_code: code, region, data_version: state.workspace.data_version, data_generation: state.generation, created_at: now(), model: chosen, model_type: chosen === "ridge_lagged" ? "machine_learning" : "statistical", model_mode: mode, model_version: chosen === "ridge_lagged" ? "ridge-lag-v1" : "statistical-v1", ml_artifact: artifact, ml_alpha_scores: Object.fromEntries(Object.entries(alphaScores).map(([alpha,score])=>[alpha,round(score,3)])), validation_windows: [84,56].map(offset=>({train_end:days[span-offset-1],validation_start:days[span-offset],validation_end:days[span-offset+27]})), holdout_start:days[span-28], ml_unavailable_reason:span < MIN_ML_HISTORY ? "ML requires 140 calendar days." : null, total: round(points.reduce((s, p) => s + p.forecast, 0)), origin, horizon, points, history: days.slice(-90).map((date, i) => ({ date, actual: values.slice(-90)[i] })), backtest: days.slice(-28).map((date, i) => ({ date, actual: values.slice(-28)[i], forecast: round(heldout[i]) })), metrics: evaluation, change_percent: recent ? round((mean(points.map(p => p.forecast)) / recent - 1) * 100) : null, signals: [], selection_mae: scores, missing_days_filled_zero: span - rows.length, interval_method: "Empirical 95th percentile holdout residual; coverage is not guaranteed.", metric_scope: "Final 28-day holdout, separate from model selection.", signal_source: "Imported sales", inventory_snapshot: inventory(state, code, origin).find(s => s.region === region) ?? null };
+  const recent = mean(values.slice(-28)); const run: SavedRun = { id: state.nextId++, product_code: code, region, data_version: state.workspace.data_version, data_generation: state.generation, created_at: now(), model: chosen, model_type: chosen === "ridge_lagged" ? "machine_learning" : "statistical", model_mode: mode, model_version: chosen === "ridge_lagged" ? "ridge-lag-v1" : "statistical-v1", ml_artifact: artifact, ml_alpha_scores: Object.fromEntries(Object.entries(alphaScores).map(([alpha,score])=>[alpha,round(score,3)])), validation_windows: [84,56].map(offset=>({train_end:days[span-offset-1],validation_start:days[span-offset],validation_end:days[span-offset+27]})), holdout_start:days[span-28], ml_unavailable_reason:span < MIN_ML_HISTORY ? "ML requires 140 calendar days." : null, total: round(points.reduce((s, p) => s + p.forecast, 0)), origin, horizon, points, history: days.slice(-90).map((date, i) => ({ date, actual: values.slice(-90)[i] })), backtest: days.slice(-28).map((date, i) => ({ date, actual: values.slice(-28)[i], forecast: round(heldout[i]) })), metrics: evaluation, change_percent: recent ? round((mean(points.map(p => p.forecast)) / recent - 1) * 100) : null, signals: [], selection_mae: maeScores, selection_score: scores, demand_pattern: pattern, missing_days_filled_zero: span - rows.length, interval_method: "Empirical 95th percentile holdout residual; coverage is not guaranteed.", metric_scope: "Final 28-day holdout, separate from model selection.", signal_source: "Imported sales", inventory_snapshot: inventory(state, code, origin).find(s => s.region === region) ?? null };
   state.runs.unshift(run); const threshold = state.workspace.settings.alert_threshold_percent ?? 15;
   const add = (level: string, message: string) => state.alerts.unshift({ id: state.nextId++, forecast_id: run.id, level, message, review_status: "pending", review_note: null, reviewed_by: null, reviewed_at: null, stale: false });
   if (run.change_percent !== null && Math.abs(run.change_percent) >= threshold) add(Math.abs(run.change_percent) >= 30 ? "HIGH" : "MEDIUM", `${code} / ${region}: demand change ${run.change_percent}%.`);
   const previous = mean(values.slice(-35, -7)); const observedChange = previous ? (mean(values.slice(-7)) / previous - 1) * 100 : 0;
   if (Math.abs(observedChange) >= threshold) add(Math.abs(observedChange) >= 30 ? "HIGH" : "MEDIUM", `Observed recent 7-day demand changed ${round(observedChange)}% versus prior 28 days at ${origin}.`);
   const product = state.products.find(p => p.code === code); const stock = run.inventory_snapshot;
-  if (product && stock && stock.inventory < run.total / horizon * product.lead_time_days + product.safety_stock) add("HIGH", `${code} / ${region}: inventory ${stock.inventory} is below lead-time demand plus safety stock. Snapshot ${stock.sale_date}.`);
+  if (product && stock && stock.inventory < run.total / horizon * product.lead_time_days + safetyStockPolicy(run, product).safety_stock) add("HIGH", `${code} / ${region}: inventory ${stock.inventory} is below lead-time demand plus safety stock. Snapshot ${stock.sale_date}.`);
   audit(state, "forecast.created", `${code} / ${region}: ${horizon} days (${chosen})`); return run;
 }
 
@@ -236,7 +257,7 @@ function dispatch(state: DemoState, rawPath: string, body: unknown, method: stri
     requireValue(payload.mode === "append" || payload.mode === "replace", "เลือกรูปแบบเพิ่มข้อมูลหรือแทนที่ข้อมูล");
     if (payload.mode === "replace") { state.sales = []; state.generation++; }
     state.sales = state.sales.concat(job.rows);
-    for (const code of new Set(job.rows.map(r => r.product_code))) if (!state.products.some(p => p.code === code)) state.products.push({ id: state.nextId++, code, name: code, lead_time_days: 14, safety_stock: 0 });
+    for (const code of new Set(job.rows.map(r => r.product_code))) if (!state.products.some(p => p.code === code)) state.products.push({ id: state.nextId++, code, name: code, lead_time_days: 14, safety_stock: 0, review_period_days: 7, service_level_percent: 95 });
     state.workspace.data_version++; job.status = "committed"; job.rows = []; job.generation = state.generation; audit(state, "import.committed", `${job.filename}: ${job.report.valid_rows} rows (${payload.mode})`); return publicJob(job);
   }
   if (path === "/imports") return state.jobs.slice(0, 50).map(publicJob);
@@ -244,7 +265,11 @@ function dispatch(state: DemoState, rawPath: string, body: unknown, method: stri
   const productPath = path.match(/^\/products\/(\d+)(\/summary)?$/);
   if (productPath) {
     const product = productById(Number(productPath[1]));
-    if (method === "PUT") { requireValue(typeof payload.name === "string" && payload.name.trim().length > 0 && payload.name.length <= 120, "ชื่อสินค้าต้องมี 1–120 ตัวอักษร"); requireValue(Number.isInteger(payload.lead_time_days) && Number(payload.lead_time_days) >= 1 && Number(payload.lead_time_days) <= 365 && Number.isInteger(payload.safety_stock) && Number(payload.safety_stock) >= 0 && Number(payload.safety_stock) <= 2147483647, "Lead time หรือ Safety stock ไม่ถูกต้อง"); Object.assign(product, payload); audit(state, "product.updated", product.code); return { message: "Product saved." }; }
+    if (method === "PUT") { requireValue(typeof payload.name === "string" && payload.name.trim().length > 0 && payload.name.length <= 120, "ชื่อสินค้าต้องมี 1–120 ตัวอักษร"); requireValue(Number.isInteger(payload.lead_time_days) && Number(payload.lead_time_days) >= 1 && Number(payload.lead_time_days) <= 365 && Number.isInteger(payload.safety_stock) && Number(payload.safety_stock) >= 0 && Number(payload.safety_stock) <= 2147483647, "Lead time หรือ Safety stock ไม่ถูกต้อง");
+      requireValue(payload.review_period_days == null || (Number.isInteger(payload.review_period_days) && Number(payload.review_period_days) >= 1 && Number(payload.review_period_days) <= 365), "รอบการสั่งซื้อต้องเป็น 1–365 วัน");
+      requireValue(payload.service_level_percent == null || SERVICE_LEVELS.includes(Number(payload.service_level_percent)), "ระดับการบริการต้องเป็น 90, 95, 98 หรือ 99%");
+      // Older clients may omit the policy fields; keep the saved values like the API does.
+      Object.assign(product, { name: payload.name, lead_time_days: payload.lead_time_days, safety_stock: payload.safety_stock, review_period_days: payload.review_period_days ?? product.review_period_days, service_level_percent: payload.service_level_percent ?? product.service_level_percent }); audit(state, "product.updated", product.code); return { message: "Product saved." }; }
     const region = url.searchParams.get("region") || undefined;
     const rows = daily(state, product.code, region), end = rows.at(-1)?.date; const recent = end ? rows.filter(r => r.date > plusDay(end, -30)).reduce((s, r) => s + r.actual, 0) : 0;
     const subset = { ...state, sales: state.sales.filter(r => r.product_code === product.code) }; return { code: product.code, region: region ?? null, last_date: end ?? null, recent_sales: recent, daily_average: recent / 30, trend: rows.slice(-90), regions: totals(subset, "region"), inventory: inventory(state, product.code).filter(s => !region || s.region === region) };
@@ -258,7 +283,7 @@ function dispatch(state: DemoState, rawPath: string, body: unknown, method: stri
   };
   const publicPlan = (plan: Replenishment) => {
     const product = state.products.find(p => p.code === plan.calculation.product_code);
-    return { ...plan, stale: plan.calculation.data_version !== state.workspace.data_version || plan.calculation.data_generation !== state.generation || !product || product.lead_time_days !== plan.calculation.lead_time_days || product.safety_stock !== plan.calculation.safety_stock };
+    return { ...plan, stale: plan.calculation.data_version !== state.workspace.data_version || plan.calculation.data_generation !== state.generation || !product || product.lead_time_days !== plan.calculation.lead_time_days || product.safety_stock !== plan.calculation.safety_stock_minimum || product.review_period_days !== plan.calculation.review_period_days || product.service_level_percent !== plan.calculation.service_level_percent };
   };
   if (path === "/replenishments") {
     if (method === "GET") return (state.plans ?? []).slice(0, 100).map(publicPlan);

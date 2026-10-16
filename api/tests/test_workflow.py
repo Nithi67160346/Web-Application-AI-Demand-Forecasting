@@ -2,6 +2,7 @@
 import base64
 import csv
 import io
+import math
 import os
 import unittest
 from datetime import date, timedelta
@@ -110,7 +111,13 @@ class WorkflowTests(unittest.TestCase):
         plan = self.post('/replenishments', {'forecast_id': run['id'], 'incoming_units': 700, 'note': 'Confirmed incoming by horizon end'})
         self.assertEqual(plan.status_code, 201, plan.text)
         calculation = plan.json()['calculation']
-        self.assertEqual(calculation['recommended_units'], 1400)
+        # Constant demand has zero holdout error, so the manual minimum of 100 is the safety stock.
+        self.assertEqual(calculation['protection_days'], 21)
+        self.assertEqual(calculation['protection_demand'], 2100)
+        self.assertEqual(calculation['safety_stock_statistical'], 0)
+        self.assertEqual(calculation['safety_stock'], 100)
+        self.assertEqual(calculation['recommended_units'], 500)
+        self.assertEqual(calculation['order_up_to_level'], 2200)
         self.assertEqual(calculation['reorder_point'], 1500)
         self.assertTrue(calculation['urgent'])
         self.assertEqual(self.get('/replenishments', self.other).json(), [])
@@ -154,6 +161,44 @@ class WorkflowTests(unittest.TestCase):
         self.import_file(no_stock, mode='replace')
         fresh = self.forecast()
         self.assertEqual(self.post('/replenishments', {**request, 'forecast_id': fresh['id']}).status_code, 409)
+
+    def noisy_file(self):
+        output = io.StringIO()
+        writer = csv.writer(output)
+        writer.writerow(['sale_date', 'product_code', 'region', 'sales_quantity', 'inventory'])
+        writer.writerows([[(date(2026, 1, 1)+timedelta(days=i)).isoformat(), 'TK-A-001', 'Bangkok', 80 + (i*37) % 41, 500] for i in range(140)])
+        return {'filename': 'noisy.csv', 'content_base64': base64.b64encode(output.getvalue().encode()).decode()}
+
+    def test_safety_stock_follows_forecast_error_service_level_and_policy(self):
+        self.import_file(self.noisy_file())
+        product = self.get('/products').json()[0]
+        self.assertEqual((product['review_period_days'], product['service_level_percent']), (7, 95))
+        product_path = f'/workspace/products/{product["id"]}'
+        run = self.forecast()
+        request = {'forecast_id': run['id'], 'incoming_units': 0, 'note': 'Weekly review'}
+        first = self.post('/replenishments', request).json()['calculation']
+        rmse = math.sqrt(sum((p['actual']-p['forecast'])**2 for p in run['backtest'])/len(run['backtest']))
+        self.assertGreater(first['safety_stock_statistical'], 0)
+        self.assertEqual(first['safety_stock_statistical'], math.ceil(1.6449*rmse*math.sqrt(21)))
+        self.assertEqual(first['safety_stock'], first['safety_stock_statistical'])
+        demand = sum(p['forecast'] for p in run['points'][:21])
+        self.assertEqual(first['recommended_units'], max(0, math.ceil(demand + first['safety_stock'] - 500)))
+        self.client.put(product_path, headers=self.headers, json={**product, 'service_level_percent': 99})
+        self.assertTrue(self.get('/replenishments').json()[0]['stale'])
+        stricter = self.post('/replenishments', request).json()['calculation']
+        self.assertGreater(stricter['safety_stock'], first['safety_stock'])
+        self.client.put(product_path, headers=self.headers, json={**product, 'service_level_percent': 99, 'safety_stock': 100000})
+        self.assertEqual(self.post('/replenishments', request).json()['calculation']['safety_stock'], 100000)
+        for invalid in ({'service_level_percent': 97}, {'review_period_days': 0}, {'review_period_days': 366}):
+            self.assertEqual(self.client.put(product_path, headers=self.headers, json={**product, **invalid}).status_code, 422)
+        # Clients that omit the policy fields keep the saved review period and service level.
+        legacy = {'name': product['name'], 'lead_time_days': 14, 'safety_stock': 0}
+        self.assertEqual(self.client.put(product_path, headers=self.headers, json=legacy).status_code, 200)
+        self.assertEqual(self.get('/products').json()[0]['service_level_percent'], 99)
+        self.client.put(product_path, headers=self.headers, json={**legacy, 'review_period_days': 30})
+        short = self.post('/replenishments', request)
+        self.assertEqual(short.status_code, 409)
+        self.assertIn('44', short.json()['detail'])
 
     def test_atomic_invalid_import_and_idempotence(self):
         stage = self.post('/imports/validate', self.file(invalid=True)).json()

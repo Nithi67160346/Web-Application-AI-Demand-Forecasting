@@ -4,7 +4,8 @@ import math
 import unittest
 from pathlib import Path
 from datetime import date, timedelta
-from app.forecasting import forecast_series
+import random
+from app.forecasting import croston_sba, forecast_series
 from app.ml_forecasting import fit_ridge, predict_artifact, predict_saved_artifact
 
 
@@ -82,3 +83,38 @@ class MLForecastingTests(unittest.TestCase):
         constant = [(d, 100.0) for d, _ in cycle_rows(140)]
         self.assertEqual(forecast_series(constant, 30, [])['model'], 'last_value')
         self.assertEqual(forecast_series(constant, 30, [], 'ml')['model'], 'ridge_lagged')
+
+
+class IntermittentDemandTests(unittest.TestCase):
+    def rows(self):
+        rng = random.Random(7)
+        values = [rng.randint(10, 50) if rng.random() < .2 else 0 for _ in range(300)]
+        return [(date(2025, 1, 1)+timedelta(days=i), float(v)) for i, v in enumerate(values)]
+
+    def test_croston_sba_smooths_size_and_interval(self):
+        self.assertEqual(croston_sba([0, 0, 0], 2), [0.0, 0.0])
+        # size 10, interval 3 -> 2.9 after the second demand; SBA factor 0.95.
+        self.assertAlmostEqual(croston_sba([0, 0, 10, 0, 10], 1)[0], .95*10/2.9)
+
+    def test_intermittent_demand_adds_croston_and_never_selects_a_zero_forecast(self):
+        result = forecast_series(self.rows(), 30, [], 'statistical')
+        self.assertEqual(result['demand_pattern'], 'intermittent')
+        self.assertIn('croston_sba', result['selection_score'])
+        # MAE alone prefers the all-zero last value; the bias-aware score does not.
+        self.assertEqual(min(result['selection_mae'], key=result['selection_mae'].get), 'last_value')
+        self.assertNotEqual(result['model'], 'last_value')
+        self.assertGreater(result['total'], 0)
+        for model, score in result['selection_score'].items():
+            self.assertGreaterEqual(score, result['selection_mae'][model])
+
+    def test_smooth_demand_keeps_the_original_candidates(self):
+        result = forecast_series(cycle_rows(), 30, [], 'statistical')
+        self.assertEqual(result['demand_pattern'], 'smooth')
+        self.assertNotIn('croston_sba', result['selection_score'])
+
+    def test_demand_pattern_ignores_the_final_holdout(self):
+        rows = self.rows()
+        changed = rows[:-28] + [(d, 500.0) for d, _ in rows[-28:]]
+        original, shifted = forecast_series(rows, 30, [], 'statistical'), forecast_series(changed, 30, [], 'statistical')
+        self.assertEqual(original['demand_pattern'], shifted['demand_pattern'])
+        self.assertEqual(original['selection_score'], shifted['selection_score'])

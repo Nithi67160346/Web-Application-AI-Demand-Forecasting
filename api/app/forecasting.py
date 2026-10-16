@@ -9,11 +9,43 @@ from .ml_forecasting import ALPHAS, MIN_HISTORY, fit_ridge, predict_artifact, pr
 
 
 MODELS = ('last_value', 'weekday_mean', 'linear_trend', 'annual_seasonal')
+# Syntetos-Boylan cut-off: average inter-demand interval of 1.32+ days is intermittent.
+INTERMITTENT_ADI = 1.32
+CROSTON_ALPHA = 0.1
+
+
+def demand_pattern(values):
+    nonzero = sum(1 for v in values if v > 0)
+    return 'intermittent' if nonzero and len(values) / nonzero >= INTERMITTENT_ADI else 'smooth'
+
+
+def croston_sba(values, horizon, alpha=CROSTON_ALPHA):
+    """Croston with Syntetos-Boylan bias correction: smoothed demand size / smoothed interval."""
+    demand_days = [i for i, v in enumerate(values) if v > 0]
+    if not demand_days:
+        return [0.0] * horizon
+    size, interval, since = float(values[demand_days[0]]), float(demand_days[0] + 1), 1
+    for value in values[demand_days[0]+1:]:
+        if value > 0:
+            size += alpha * (value - size)
+            interval += alpha * (since - interval)
+            since = 1
+        else:
+            since += 1
+    return [(1 - alpha/2) * size / interval] * horizon
+
+
+def selection_score(actual, forecast):
+    # MAE alone rewards forecasting zero for intermittent demand; |bias| penalises under-forecasting totals.
+    errors = [f-a for a, f in zip(actual, forecast)]
+    return mean(abs(e) for e in errors) + abs(mean(errors)), mean(abs(e) for e in errors)
 
 
 def predict(values, days, horizon, model, alpha=1.0):
     if model == 'ridge_lagged':
         return predict_ridge(values, days, horizon, alpha)
+    if model == 'croston_sba':
+        return croston_sba(values, horizon)
     if model == 'last_value':
         return [float(values[-1])] * horizon
     if model == 'annual_seasonal' and len(values) >= 365:
@@ -53,8 +85,13 @@ def forecast_series(rows, horizon, signals, model_mode='auto'):
     if model_mode == 'ml' and len(days) < MIN_HISTORY:
         raise ValueError('ML requires at least 140 calendar days and 56 observed dates; import more history or use auto/statistical mode.')
     candidates = [model for model in MODELS if model != 'annual_seasonal' or len(values) >= 449]
+    # Pattern uses pre-holdout history only, so the holdout cannot change the candidate set.
+    pattern = demand_pattern(values[:-28])
+    if pattern == 'intermittent':
+        candidates.append('croston_sba')
     scores = {}
     raw_scores = {}
+    mae_scores = {}
     validation_windows = []
     for offset in (84, 56):
         cutoff = len(values)-offset
@@ -62,26 +99,26 @@ def forecast_series(rows, horizon, signals, model_mode='auto'):
                                    'validation_end': days[cutoff+27].isoformat()})
     # Two validation windows select the model. Final 28 days remain untouched.
     for model in candidates:
-        fold_scores = []
+        folds = []
         for offset in (84, 56):
             cutoff = len(values) - offset
-            estimates = predict(values[:cutoff], days[:cutoff], 28, model)
-            fold_scores.append(mean(abs(a-f) for a, f in zip(values[cutoff:cutoff+28], estimates)))
-        raw_scores[model] = mean(fold_scores)
+            folds.append(selection_score(values[cutoff:cutoff+28], predict(values[:cutoff], days[:cutoff], 28, model)))
+        raw_scores[model] = mean(score for score, _ in folds)
         scores[model] = round(raw_scores[model], 3)
+        mae_scores[model] = round(mean(mae for _, mae in folds), 3)
     alpha_scores = {}
     selected_alpha = None
     if model_mode != 'statistical' and len(days) >= MIN_HISTORY:
         for alpha in ALPHAS:
-            fold_scores = []
+            folds = []
             for offset in (84, 56):
                 cutoff = len(values)-offset
-                estimates = predict(values[:cutoff], days[:cutoff], 28, 'ridge_lagged', alpha)
-                fold_scores.append(mean(abs(a-f) for a, f in zip(values[cutoff:cutoff+28], estimates)))
-            alpha_scores[alpha] = mean(fold_scores)
-        selected_alpha = min(alpha_scores, key=alpha_scores.get)
-        raw_scores['ridge_lagged'] = alpha_scores[selected_alpha]
+                folds.append(selection_score(values[cutoff:cutoff+28], predict(values[:cutoff], days[:cutoff], 28, 'ridge_lagged', alpha)))
+            alpha_scores[alpha] = (mean(score for score, _ in folds), mean(mae for _, mae in folds))
+        selected_alpha = min(alpha_scores, key=lambda alpha: alpha_scores[alpha][0])
+        raw_scores['ridge_lagged'] = alpha_scores[selected_alpha][0]
         scores['ridge_lagged'] = round(raw_scores['ridge_lagged'], 3)
+        mae_scores['ridge_lagged'] = round(alpha_scores[selected_alpha][1], 3)
     chosen = 'ridge_lagged' if model_mode == 'ml' else min(raw_scores, key=raw_scores.get)
     heldout = predict(values[:-28], days[:-28], 28, chosen, selected_alpha or 1.0)
     evaluation = metrics(values[-28:], heldout)
@@ -103,10 +140,10 @@ def forecast_series(rows, horizon, signals, model_mode='auto'):
     future = mean([point['forecast'] for point in points])
     return {'model': chosen, 'model_type': 'machine_learning' if chosen == 'ridge_lagged' else 'statistical',
             'model_mode': model_mode, 'model_version': 'ridge-lag-v1' if chosen == 'ridge_lagged' else 'statistical-v1',
-            'ml_artifact': ml_artifact, 'ml_alpha_scores': {str(a): round(score, 3) for a, score in alpha_scores.items()},
+            'ml_artifact': ml_artifact, 'ml_alpha_scores': {str(a): round(score, 3) for a, (score, _) in alpha_scores.items()},
             'validation_windows': validation_windows, 'holdout_start': days[-28].isoformat(),
             'ml_unavailable_reason': f'ML requires {MIN_HISTORY} calendar days.' if len(days) < MIN_HISTORY else None,
-            'selection_mae': scores, 'metrics': evaluation,
+            'selection_mae': mae_scores, 'selection_score': scores, 'demand_pattern': pattern, 'metrics': evaluation,
             'metric_scope': 'Final 28-day holdout excluded from model and hyperparameter selection; recursive forecasts use no future actuals.',
             'interval_method': 'Empirical 95th percentile holdout absolute residual, widened with horizon; coverage is not guaranteed.',
             'missing_days_filled_zero': len(days)-len(observed), 'observed_days': len(rows),
@@ -115,4 +152,4 @@ def forecast_series(rows, horizon, signals, model_mode='auto'):
             'points': points, 'horizon': horizon, 'origin': end.isoformat(), 'total': round(sum(p['forecast'] for p in points), 2),
             'change_percent': round((future/recent-1)*100, 2) if recent else None,
             'signals': signals, 'signal_source': 'Explicit synthetic scenario modifiers, no external feed' if signals else 'Imported sales only; no external signals.',
-            'note': 'Forecast trained per product/region at its origin; auto selects lowest validation MAE. ML-only mode is explicit. Refit on all available history after holdout evaluation; synthetic data does not establish real-world accuracy.'}
+            'note': 'Forecast trained per product/region at its origin; auto selects the lowest validation MAE + |bias|; intermittent demand adds Croston SBA. ML-only mode is explicit. Refit on all available history after holdout evaluation; synthetic data does not establish real-world accuracy.'}

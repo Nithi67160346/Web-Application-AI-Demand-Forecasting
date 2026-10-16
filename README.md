@@ -36,12 +36,12 @@ Frontend Workflow ของ AI Demand Forecasting Platform
 - Dashboard: KPI, Actual vs Forecast, Product ranking, Region contribution และ Recent alerts
 - Data onboarding: Upload CSV/Excel, Preview, Column mapping และ Data quality score
 - Forecast workspace: เลือก Product/Region และ 7–180 วัน คำนวณจากยอดขายที่นำเข้า และเก็บประวัติผลลัพธ์
-- Model evaluation: Validation MAE, Holdout WAPE, ช่วงความไม่แน่นอน และ Human review decision support
+- Model evaluation: Validation score (MAE + |Bias|), Croston SBA สำหรับยอดขายไม่สม่ำเสมอ, Holdout WAPE, ช่วงความไม่แน่นอน และ Human review decision support
 - Machine Learning: Ridge Regression ใช้ lag 1/7/14/28 วัน ค่าเฉลี่ยย้อนหลัง วันในสัปดาห์ และแนวโน้ม
   เลือก Auto / ML / Statistical, เก็บพารามิเตอร์ที่ฝึกกับผล Forecast และดาวน์โหลดโมเดล JSON ได้
 - Products: Product portfolio, Inventory health, Demand by region และ Product detail
 - Story Dashboard: สรุปยอดขายและ Forecast พร้อมหลักฐานในสินค้า/พื้นที่เดียวกัน และคำอธิบายสูตร
-- Replenishment planning: คำนวณจำนวนควรเติมจาก Forecast, Safety stock, สต็อกและสินค้ารอรับ
+- Replenishment planning: สั่งเติมแบบรอบทบทวนจาก Forecast ช่วง Lead time + รอบการสั่งซื้อ, Safety stock จากความคลาดเคลื่อนของ Forecast ตามระดับการบริการ, สต็อกและสินค้ารอรับ
   บันทึกแผนและผลอนุมัติพร้อมผู้ทบทวน/เวลา โดยเก็บสต็อกตามข้อมูลนำเข้า
 - Alerts: High/Medium/Low priority, Alert detail และ Mark as reviewed
 - Monitoring: Actual vs Forecast performance, Model health และ Re-forecast loop
@@ -438,7 +438,7 @@ Demo URL ของโปรเจกต์:
 3. เข้า Forecast เลือกสินค้า Region ระยะ 7–180 วัน และวิธีเลือกโมเดล
 4. เลือก Machine Learning เพื่อใช้ Ridge โดยตรง หรือ Auto เพื่อเปรียบเทียบกับโมเดลสถิติ
 5. กด `Run Forecast`; ML ต้องมีประวัติอย่างน้อย 140 วันปฏิทินและ 56 วันที่มีข้อมูล
-6. ดู Validation MAE, Holdout WAPE และรายละเอียดโมเดล; ดาวน์โหลดโมเดล ML เป็น JSON ได้
+6. ดู Validation score/MAE, Holdout WAPE และรายละเอียดโมเดล; ดาวน์โหลดโมเดล ML เป็น JSON ได้
 7. เปิด Product detail หรือ Story Dashboard เพื่อทบทวนสต็อกและบันทึกแผนเติมสินค้า
 8. เปิด Alerts/Monitoring เพื่อตรวจและทบทวนผลที่บันทึก
 

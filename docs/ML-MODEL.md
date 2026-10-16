@@ -21,7 +21,8 @@ Demo ใช้การฝึกแบบเดียวกันใน JavaScri
 ทุก fold สร้าง features/scalers/weights ใหม่จากข้อมูลก่อน cutoff เท่านั้น.
 ML พยากรณ์แบบ recursive: วันถัดไปใช้ lag ของ prediction หากไม่มี Actual ที่รู้ ณ cutoff.
 ห้ามใส่ Actual ของ validation/holdout กลับเข้า lag ระหว่างการประเมิน.
-Auto เลือกโมเดลจากค่า MAE ก่อนปัดเศษ; โหมด ML ผู้ใช้เลือก Ridge โดยตรงแต่ยังดูคะแนน baseline ได้.
+Auto เลือกโมเดลจาก Validation score = MAE + |Bias| ก่อนปัดเศษ (`selection_score`; `selection_mae` เก็บ MAE แยก)
+และใช้คะแนนเดียวกันเลือก alpha. ยอดขายไม่สม่ำเสมอ (ADI ≥ 1.32 จากประวัติก่อน holdout) เพิ่ม Croston SBA; โหมด ML ผู้ใช้เลือก Ridge โดยตรงแต่ยังดูคะแนน baseline ได้.
 Holdout WAPE/MAE เป็นผลรอบที่ฝึกก่อน holdout. หลังประเมินจึง fit ครั้งสุดท้ายด้วยประวัติทั้งหมด ณ origin.
 พารามิเตอร์ครั้งสุดท้ายไม่ได้อ้างว่าเป็นพารามิเตอร์ที่ใช้ทดสอบ holdout.
 

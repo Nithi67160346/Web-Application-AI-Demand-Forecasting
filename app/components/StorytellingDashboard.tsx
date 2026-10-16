@@ -10,7 +10,7 @@ import { ReplenishmentPanel } from "./ReplenishmentPanel";
 import "./storytelling.css";
 
 const format = (v: number | null | undefined) => v == null ? "—" : v.toLocaleString("th-TH", { maximumFractionDigits: 2 });
-const models: Record<string, string> = { last_value: "ยอดขายล่าสุด", weekday_mean: "รูปแบบยอดขายรายสัปดาห์", linear_trend: "แนวโน้มยอดขาย", annual_seasonal: "ฤดูกาลรายปี", ridge_lagged: "Ridge Regression · ML" };
+const models: Record<string, string> = { last_value: "ยอดขายล่าสุด", weekday_mean: "รูปแบบยอดขายรายสัปดาห์", linear_trend: "แนวโน้มยอดขาย", annual_seasonal: "ฤดูกาลรายปี", ridge_lagged: "Ridge Regression · ML", croston_sba: "ยอดขายไม่สม่ำเสมอ · Croston SBA" };
 const tabs = [{ id: "summary", title: "สรุปและตัดสินใจ" }, { id: "evidence", title: "ข้อมูลที่ใช้" }, { id: "metrics", title: "อ่านตัวเลขอย่างไร" }, { id: "team", title: "พื้นที่ทำงานและทีม" }];
 
 export function StorytellingDashboard({ ctx }: { ctx: Context }) {

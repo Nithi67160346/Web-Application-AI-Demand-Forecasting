@@ -32,6 +32,8 @@ class ProductRecord(Base):
     name: Mapped[str] = mapped_column(String(120))
     lead_time_days: Mapped[int] = mapped_column(Integer, default=14)
     safety_stock: Mapped[int] = mapped_column(Integer, default=0)
+    review_period_days: Mapped[int] = mapped_column(Integer, default=7, server_default='7')
+    service_level_percent: Mapped[int] = mapped_column(Integer, default=95, server_default='95')
 
 
 class ImportJob(Base):
